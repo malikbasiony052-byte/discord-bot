@@ -72,3 +72,66 @@ for (const token of cleanTokens) {
     });
     client.connect();
 }
+
+const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+
+// إعدادات البوت والصلاحيات
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent, // مهمة جداً لقراءة الأوامر في الشات
+        GatewayIntentBits.GuildMembers
+    ]
+});
+
+// أيدي القناة المخصصة للتاسكات (نفس الأيدي اللي كنت مستخدمه)
+const TASK_CHANNEL_ID = "1535001426302861403";
+
+client.once('ready', () => {
+    console.log(`✅ تم تشغيل البوت بنجاح: ${client.user.tag}`);
+});
+
+// استقبال الأوامر والرسائل
+client.on('messageCreate', async (message) => {
+    if (message.author.bot) return;
+
+    // أمر !task لإرسال لوحة التاسكات
+    if (message.content.trim() === '!task') {
+        const embed = new EmbedBuilder()
+            .setTitle("نظام التاسكات الجديد")
+            .setDescription("إذا سلمت التاسك، اضغط على الزر أدناه لملء البيانات المطلوبة.")
+            .setColor(0x2ECC71);
+
+        const row = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('submit_task_btn')
+                    .setLabel('تم 📥')
+                    .setStyle(ButtonStyle.Success)
+            );
+
+        try {
+            await message.channel.send({ embeds: [embed], components: [row] });
+            await message.delete(); // حذف رسالة الأمر لتنظيف الشات
+        } catch (error) {
+            console.log("خطأ أثناء إرسال رسالة التاسك:", error);
+        }
+    }
+});
+
+// قراءة التوكن من ملف config.json أو من متغيرات البيئة في الهوست
+const fs = require('fs');
+let token = process.env.DISCORD_TOKEN;
+
+if (!token && fs.existsSync('./config.json')) {
+    const config = require('./config.json');
+    token = config.token;
+}
+
+if (token) {
+    client.login(token);
+} else {
+    console.log("❌ تنبيه: لم يتم العثور على التوكن! تأكد من إضافته في ملف config.json أو في إعدادات الهوست.");
+}
+
