@@ -1,0 +1,17 @@
+{
+  "token": "",
+  "channels": {
+    "task_log": 1535001426302861403,
+    "vacation_log": 1552576612648624148,
+    "leaderboard": 1563202261281144952,
+    "task_input": 1535001426302861403,
+    "voice_channels": [1491081188306325706, 1491081264084680774]
+  },
+  "roles": {
+    "gang_name": "𓆩ɢᴛᴀ𓆪・𝐆𝐀𝐍G",
+    "allowed_admin_roles": ["丶𝐋𝐞𝐚𝐝𝐞𝐫", "admin structure"],
+    "admin_role_id": 1283928161805140022,
+    "allowed_role_id": 1283928161805140022,
+    "warn_role_id": 1283928161805140022
+  }
+}
