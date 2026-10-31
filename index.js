@@ -8,7 +8,6 @@ import { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilde
 const app = express();
 const port = 3000;
 let url = "";
-let uptimeDate = Date.now();
 let requests = 0;
 let response = null;
 
@@ -83,7 +82,7 @@ for (const tokenConfig of cleanTokens) {
 }
 
 // ==========================================
-// 🤖 بوت الأوامر والتاسكات والإجازات والأسلحة
+// 🤖 بوت الأوامر واللوحات الثابتة والليدربورد
 // ==========================================
 const client = new Client({
     intents: [
@@ -96,89 +95,149 @@ const client = new Client({
 
 const TASK_LOG_CHANNEL_ID = "1535001426302861403";
 const VACATION_LOG_CHANNEL_ID = "1552576612648624148";
+const LEADERBOARD_CHANNEL_ID = "1563202261281144952";
 const GANG_ROLE_NAME = "𓆩ɢᴛᴀ𓆪・𝐆𝐀𝐍G";
 
-client.once('ready', () => {
-    console.log(`✅ بوت الأوامر والتاسكات اشتغل بنجاح: ${client.user.tag}`);
+const DATA_FILE = "leaderboard_data.json";
+let db = {
+    "voiceTime": {},
+    "resources": {},
+    "vacations": {},
+    "vc_message_id": null,
+    "task_message_id": null,
+    "vacation_message_id": null
+};
+
+if (fs.existsSync(DATA_FILE)) {
+    try {
+        const loadedData = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+        if (typeof loadedData === 'object') Object.assign(db, loadedData);
+    } catch (e) {}
+}
+
+function saveData() {
+    fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2), 'utf8');
+}
+
+// دوال بناء ليدربورد
+function buildTaskEmbed() {
+    let desc = "**📋 سجل تسليم التاسك والموارد:**\n\n";
+    if (!db.resources || Object.keys(db.resources).length === 0) {
+        desc += "لا يوجد تسليمات مسجلة حتى الآن.";
+    } else {
+        for (const [ukey, val] of Object.entries(db.resources)) {
+            desc += `${ukey} : ${val}\n`;
+        }
+    }
+    return new EmbedBuilder().setTitle("📦 LEADERBOARD - TASKS").setDescription(desc).setColor(0xE67E22);
+}
+
+function buildVacationEmbed() {
+    let desc = "**🌴 سجل الإجازات المقبولة:**\n\n";
+    if (!db.vacations || Object.keys(db.vacations).length === 0) {
+        desc += "لا توجد إجازات مقبولة حتى الآن.";
+    } else {
+        for (const [vkey, vval] of Object.entries(db.vacations)) {
+            desc += `• ${vkey} : **{vval}**\n`;
+        }
+    }
+    return new EmbedBuilder().setTitle("🏖️ LEADERBOARD - VACATION").setDescription(desc).setColor(0x2ECC71);
+}
+
+async function updateLeaderboardEmbeds() {
+    const channel = client.channels.cache.get(LEADERBOARD_CHANNEL_ID);
+    if (!channel) return;
+
+    // تحديث تاسكات ليدربورد
+    try {
+        const embed = buildTaskEmbed();
+        if (db.task_message_id) {
+            const msg = await channel.messages.fetch(db.task_message_id);
+            await msg.edit({ embeds: [embed] });
+        } else {
+            const msg = await channel.send({ embeds: [embed] });
+            db.task_message_id = msg.id;
+            saveData();
+        }
+    } catch (e) {
+        const msg = await channel.send({ embeds: [buildTaskEmbed()] });
+        db.task_message_id = msg.id;
+        saveData();
+    }
+
+    // تحديث إجازات ليدربورد
+    try {
+        const embed = buildVacationEmbed();
+        if (db.vacation_message_id) {
+            const msg = await channel.messages.fetch(db.vacation_message_id);
+            await msg.edit({ embeds: [embed] });
+        } else {
+            const msg = await channel.send({ embeds: [embed] });
+            db.vacation_message_id = msg.id;
+            saveData();
+        }
+    } catch (e) {
+        const msg = await channel.send({ embeds: [buildVacationEmbed()] });
+        db.vacation_message_id = msg.id;
+        saveData();
+    }
+}
+
+client.once('ready', async () => {
+    console.log(`✅ البوت اشتغل بنجاح: ${client.user.tag}`);
+    await updateLeaderboardEmbeds();
 });
 
-// استقبال الأوامر بالشات
+// استقبال الأوامر لتوليد الأزرار الثابتة في القنوات (SETUP PANELS)
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
     const content = message.content.trim();
 
-    // 1. أمر التاسك
-    if (content === '!task' || content === '!تاسك') {
+    // 1. لوحة التاسكات الثابتة
+    if (content === '!setup-task') {
         const embed = new EmbedBuilder()
             .setTitle("نظام التاسكات الجديد")
             .setDescription("إذا سلمت التاسك، اضغط على الزر أدناه لملء البيانات المطلوبة.")
             .setColor(0x2ECC71);
 
         const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('submit_task_main_btn')
-                .setLabel('تم 📥')
-                .setStyle(ButtonStyle.Success)
+            new ButtonBuilder().setCustomId('submit_task_main_btn').setLabel('تم 📥').setStyle(ButtonStyle.Success)
         );
-
-        try {
-            await message.channel.send({ embeds: [embed], components: [row] });
-            await message.delete();
-        } catch (error) {
-            console.log("خطأ في إرسال التاسك:", error);
-        }
+        await message.channel.send({ embeds: [embed], components: [row] });
+        try { await message.delete(); } catch (e) {}
     }
 
-    // 2. أمر الإجازات
-    if (content === '!vacation' || content === '!إجازة' || content === '!اجازه') {
+    // 2. لوحة الإجازات الثابتة
+    if (content === '!setup-vacation') {
         const embed = new EmbedBuilder()
             .setTitle("🌴 نظام الإجازات - VACATION SYSTEM")
             .setDescription("الخدمة متاحة لجميع الأعضاء. اضغط على الزر أدناه لتعبئة طلب الإجازة.")
             .setColor(0xE6BE1E);
 
         const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('btn_main_vacation_app')
-                .setLabel('اضغط لتقديم الإجازة 📝')
-                .setStyle(ButtonStyle.Primary)
+            new ButtonBuilder().setCustomId('btn_main_vacation_app').setLabel('اضغط لتقديم الإجازة 📝').setStyle(ButtonStyle.Primary)
         );
-
-        try {
-            await message.channel.send({ embeds: [embed], components: [row] });
-            await message.delete();
-        } catch (error) {
-            console.log("خطأ في إرسال الإجازة:", error);
-        }
+        await message.channel.send({ embeds: [embed], components: [row] });
+        try { await message.delete(); } catch (e) {}
     }
 
-    // 3. أمر الأسلحة
-    if (content === '!weapons-panel') {
+    // 3. لوحة الأسلحة الثابتة
+    if (content === '!setup-weapons') {
         const embed = new EmbedBuilder()
             .setTitle("WEAPONS SYSTEM")
             .setDescription("نظام السلاح\nإذا أعطيت أو استلمت سلاح اضغط على الأزرار بالأسفل.")
             .setColor(0x2ECC71);
 
         const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('persistent_btn_receive_v9')
-                .setLabel('استلمت سلاح')
-                .setStyle(ButtonStyle.Danger),
-            new ButtonBuilder()
-                .setCustomId('persistent_btn_give_v9')
-                .setLabel('سلمت سلاح')
-                .setStyle(ButtonStyle.Success)
+            new ButtonBuilder().setCustomId('persistent_btn_receive_v9').setLabel('استلمت سلاح').setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId('persistent_btn_give_v9').setLabel('سلمت سلاح').setStyle(ButtonStyle.Success)
         );
-
-        try {
-            await message.channel.send({ embeds: [embed], components: [row] });
-            await message.delete();
-        } catch (error) {
-            console.log("خطأ في إرسال الأسلحة:", error);
-        }
+        await message.channel.send({ embeds: [embed], components: [row] });
+        try { await message.delete(); } catch (e) {}
     }
 });
 
-// التعامل مع الأزرار والـ Modals
+// التفاعل مع الأزرار والـ Modals واعتماد الإدارة
 client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton()) {
         if (interaction.customId === 'submit_task_main_btn') {
@@ -202,14 +261,38 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.showModal(modal);
         }
 
-        if (interaction.customId === 'persistent_btn_receive_v9' || interaction.customId === 'persistent_btn_give_v9') {
-            const isGive = interaction.customId === 'persistent_btn_give_v9';
-            const modal = new ModalBuilder().setCustomId(isGive ? 'weapon_give_modal' : 'weapon_receive_modal').setTitle(isGive ? 'سلمت سلاح' : 'استلمت سلاح');
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('weapon_target').setLabel('الشخص (منشن أو اسمه):').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('weapon_details').setLabel('التفاصيل :').setStyle(TextInputStyle.Paragraph).setRequired(true))
-            );
-            await interaction.showModal(modal);
+        if (interaction.customId === 'approve_task_btn' || interaction.customId === 'reject_task_btn') {
+            const isApprove = interaction.customId === 'approve_task_btn';
+            const originalEmbed = interaction.message.embeds[0];
+            const updatedEmbed = EmbedBuilder.from(originalEmbed)
+                .setColor(isApprove ? 0x2ECC71 : 0xE74C3C)
+                .setTitle(isApprove ? "TASK APPROVED ✅" : "TASK REJECTED ❌");
+
+            await interaction.update({ embeds: [updatedEmbed], components: [] });
+
+            if (isApprove) {
+                const userKey = `<@${interaction.user.id}>`;
+                db.resources[userKey] = (db.resources[userKey] || 0) + 1;
+                saveData();
+                await updateLeaderboardEmbeds();
+            }
+        }
+
+        if (interaction.customId === 'btn_approve_vacation' || interaction.customId === 'btn_reject_vacation') {
+            const isApprove = interaction.customId === 'btn_approve_vacation';
+            const originalEmbed = interaction.message.embeds[0];
+            const updatedEmbed = EmbedBuilder.from(originalEmbed)
+                .setColor(isApprove ? 0x2ECC71 : 0xE74C3C)
+                .setTitle(isApprove ? "🌴 تم قبول الإجازة" : "❌ تم رفض الإجازة");
+
+            await interaction.update({ embeds: [updatedEmbed], components: [] });
+
+            if (isApprove) {
+                const userKey = `<@${interaction.user.id}>`;
+                db.vacations[userKey] = "مقبولة";
+                saveData();
+                await updateLeaderboardEmbeds();
+            }
         }
     }
 
@@ -228,7 +311,12 @@ client.on('interactionCreate', async (interaction) => {
                 .setDescription(`👤 **العضو:** ${interaction.user}\n👤 **الاسم:** ${name}\n🎒 **الموارد:** \`${resources}\`\n💰 **الفلوس:** \`${money}\`\n🤝 **سلمت لمين:** \`${deliveredTo}\``)
                 .setColor(0xF1C40F);
 
-            await logChannel.send({ content: `📢 **إثبات تسليم من ${interaction.user} يتطلب مراجعة الإدارة:**`, embeds: [embed] });
+            const adminRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('approve_task_btn').setLabel('نعم سلم التاسك').setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId('reject_task_btn').setLabel('لا لم يسلم التاسك').setStyle(ButtonStyle.Danger)
+            );
+
+            await logChannel.send({ content: `📢 **إثبات تسليم من ${interaction.user} يتطلب مراجعة الإدارة:**`, embeds: [embed], components: [adminRow] });
         }
 
         if (interaction.customId === 'vacation_modal') {
@@ -244,12 +332,17 @@ client.on('interactionCreate', async (interaction) => {
                 .setDescription(`👤 **العضو:** ${interaction.user}\n📝 **الاسم:** ${name}\n📅 **المدة:** ${duration}\n💬 **السبب:** ${reason}`)
                 .setColor(0xE6BE1E);
 
-            await logChannel.send({ content: `📣 **طلب إجازة جديد من ${interaction.user}:**`, embeds: [embed] });
+            const adminRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('btn_approve_vacation').setLabel('موافقة الإجازة ✅').setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId('btn_reject_vacation').setLabel('رفض الإجازة ❌').setStyle(ButtonStyle.Danger)
+            );
+
+            await logChannel.send({ content: `📣 **طلب إجازة جديد من ${interaction.user}:**`, embeds: [embed], components: [adminRow] });
         }
     }
 });
 
-// تشغيل بوت الأوامر بنفس التوكن الموجود في tokens.js أو process.env
+// تسجيل الدخول للبوت
 import tokensList from "./tokens.js";
 let botToken = process.env.DISCORD_TOKEN;
 if (!botToken && tokensList && tokensList.length > 0) {
@@ -259,5 +352,5 @@ if (!botToken && tokensList && tokensList.length > 0) {
 if (botToken) {
     client.login(botToken);
 } else {
-    console.log("❌ تنبيه: لم يتم العثور على التوكن الخاص ببوت الأوامر!");
+    console.log("❌ تنبيه: لم يتم العثور على التوكن الخاص بالبوت!");
 }
