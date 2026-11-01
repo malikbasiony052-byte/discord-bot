@@ -74,6 +74,7 @@ const client = new Client({
 const TASK_LOG_CHANNEL_ID = "1535001426302861403";
 const VACATION_LOG_CHANNEL_ID = "1552576612648624148";
 const LEADERBOARD_CHANNEL_ID = "1563202261281144952";
+const WARN_CHANNEL_ID = "1534996020092600433";
 const ALLOWED_ROLE_ID = 1283928161805140022;
 
 // ملفات البيانات
@@ -101,7 +102,7 @@ const DEFAULT_STOCK = {
     "TABLET GANGS": 0
 };
 
-// تحميل وإدارة بيانات التابلت والتحذيرات والمخزون
+// تحميل وإدارة بيانات التابلت والتحذيرات
 function loadTabletsData() {
     if (fs.existsSync(DATA_FILE)) {
         try {
@@ -181,34 +182,40 @@ function saveLeaderboardData() {
     fs.writeFileSync(LEADERBOARD_DATA_FILE, JSON.stringify(db, null, 2), 'utf8');
 }
 
-// بيانات مخزون العيلة (STORAGE)
-let storage_items = {};
-if (fs.existsSync(STORAGE_FILE)) {
+// بيانات التحذيرات (Warnings Tracker)
+let warnings_data = { "warnings_list": {}, "warn_msg_id": null, "warn_channel_id": null };
+if (fs.existsSync(WARNINGS_FILE)) {
     try {
-        storage_items = JSON.parse(fs.readFileSync(STORAGE_FILE, 'utf8'));
+        const loaded = JSON.parse(fs.readFileSync(WARNINGS_FILE, 'utf8'));
+        if (typeof loaded === 'object') Object.assign(warnings_data, loaded);
     } catch (e) {}
 }
-function saveStorageItems() {
-    fs.writeFileSync(STORAGE_FILE, JSON.stringify(storage_items, null, 2), 'utf8');
+
+function saveWarningsData() {
+    fs.writeFileSync(WARNINGS_FILE, JSON.stringify(warnings_data, null, 2), 'utf8');
 }
+
+// بيانات STORAGE
+let storage_items = {};
+if (fs.existsSync(STORAGE_FILE)) {
+    try { storage_items = JSON.parse(fs.readFileSync(STORAGE_FILE, 'utf8')); } catch (e) {}
+}
+function saveStorageItems() { fs.writeFileSync(STORAGE_FILE, JSON.stringify(storage_items, null, 2), 'utf8'); }
 
 let storage_invoices = {};
 if (fs.existsSync(STORAGE_INVOICES_FILE)) {
-    try {
-        storage_invoices = JSON.parse(fs.readFileSync(STORAGE_INVOICES_FILE, 'utf8'));
-    } catch (e) {}
+    try { storage_invoices = JSON.parse(fs.readFileSync(STORAGE_INVOICES_FILE, 'utf8')); } catch (e) {}
 }
-function saveStorageInvoices() {
-    fs.writeFileSync(STORAGE_INVOICES_FILE, JSON.stringify(storage_invoices, null, 2), 'utf8');
-}
+function saveStorageInvoices() { fs.writeFileSync(STORAGE_INVOICES_FILE, JSON.stringify(storage_invoices, null, 2), 'utf8'); }
 
 function buildStorageEmbed() {
     let desc = "";
     if (Object.keys(storage_items).length === 0) {
         desc = "المخزون فارغ حالياً.";
     } else {
+        let count = 1;
         for (let [item, qty] of Object.entries(storage_items)) {
-            desc += `• **${item}** : \`${qty}\`\n`;
+            desc += `${count++}. **${item}** : \`${qty}\`\n`;
         }
     }
     return new EmbedBuilder()
@@ -216,6 +223,56 @@ function buildStorageEmbed() {
         .setDescription(`**المخزون الحالي :**\n\n${desc}`)
         .setColor(0x3498DB)
         .setTimestamp();
+}
+
+function buildWarningsEmbed() {
+    let list = warnings_data.warnings_list || {};
+    let totalWarned = Object.keys(list).length;
+    let desc = `📊 **إحصائيات الورنات:**\n\n**TOTAL WARNED MEMBERS : ${totalWarned}**\n\n👤 **الأعضاء الحاصلين على WARN:**\n\n`;
+
+    if (totalWarned === 0) {
+        desc += "لا يوجد أعضاء عليهم تحذيرات حالياً.";
+    } else {
+        for (let [userTag, level] of Object.entries(list)) {
+            desc += `👤 **${userTag}** : ⚠️ **WARN ${level}**\n`;
+        }
+    }
+
+    return new EmbedBuilder()
+        .setTitle("⚠️ نظام الورنات - WARN SYSTEM")
+        .setDescription(desc)
+        .setColor(0xE74C3C)
+        .setFooter({ text: "xXx WARN SYSTEM", iconURL: client.user?.displayAvatarURL() });
+}
+
+async function updateWarningsMessage() {
+    let channelId = warnings_data.warn_channel_id || WARN_CHANNEL_ID;
+    let msgId = warnings_data.warn_msg_id;
+    if (!channelId) return;
+
+    try {
+        let channel = await client.channels.fetch(channelId);
+        if (!channel) return;
+
+        let row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('btn_give_warn_main').setLabel('إعطاء ون ⚠️').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId('btn_remove_warn_main').setLabel('إزالة ون 🗑️').setStyle(ButtonStyle.Danger)
+        );
+
+        if (msgId) {
+            try {
+                let msg = await channel.messages.fetch(msgId);
+                await msg.edit({ embeds: [buildWarningsEmbed()], components: [row] });
+                return;
+            } catch (err) {}
+        }
+
+        // إذا لم تكن موجودة، ننشئ رسالة جديدة ونحفظ الأيدي
+        let newMsg = await channel.send({ embeds: [buildWarningsEmbed()], components: [row] });
+        warnings_data.warn_msg_id = newMsg.id;
+        warnings_data.warn_channel_id = channel.id;
+        saveWarningsData();
+    } catch (e) {}
 }
 
 function parseChangeInput(current_val, input_str) {
@@ -250,14 +307,12 @@ function buildShowEmbed() {
     for (let [name, status] of Object.entries(tablets_data)) {
         if (status !== "❌ لا يوجد") {
             active_holders.push(`👤 **${name}** : ${status}`);
+        } else {
+            active_holders.push(`👤 **${name}** : ❌ لا يوجد`);
         }
     }
     
-    if (active_holders.length > 0) {
-        embed.setDescription(embed.data.description + active_holders.join('\n'));
-    } else {
-        embed.setDescription(embed.data.description + "لا يوجد أحد يحمل تابلت حالياً.");
-    }
+    embed.setDescription(embed.data.description + active_holders.join('\n'));
     embed.setFooter({ text: "xXx TABLETS SYSTEM", iconURL: client.user?.displayAvatarURL() });
     return embed;
 }
@@ -369,6 +424,7 @@ async function updateLeaderboardEmbeds() {
 client.once('ready', async () => {
     console.log(`✅ البوت الموحد اشتغل بنجاح: ${client.user.tag}`);
     await updateLeaderboardEmbeds();
+    await updateWarningsMessage();
 });
 
 // استقبال الأوامر بالشات
@@ -376,7 +432,6 @@ client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
     const content = message.content.trim();
 
-    // 1. لوحة التاسكات الثابتة
     if (content === '!setup-task') {
         const embed = new EmbedBuilder()
             .setTitle("نظام التاسكات الجديد")
@@ -390,7 +445,6 @@ client.on('messageCreate', async (message) => {
         try { await message.delete(); } catch (e) {}
     }
 
-    // 2. لوحة الإجازات الثابتة
     if (content === '!setup-vacation') {
         const embed = new EmbedBuilder()
             .setTitle("🌴 نظام الإجازات - VACATION SYSTEM")
@@ -404,7 +458,6 @@ client.on('messageCreate', async (message) => {
         try { await message.delete(); } catch (e) {}
     }
 
-    // 3. لوحة الأسلحة الثابتة
     if (content === '!setup-weapons') {
         const embed = new EmbedBuilder()
             .setTitle("WEAPONS SYSTEM")
@@ -419,21 +472,14 @@ client.on('messageCreate', async (message) => {
         try { await message.delete(); } catch (e) {}
     }
 
-    // 4. لوحة الورنات
+    // أمر الورنات المباشر في الغرفة المطلوبة
     if (content === '!setup-warn') {
-        const embed = new EmbedBuilder()
-            .setTitle("⚠️ WARNING SYSTEM - نظام التحذيرات")
-            .setDescription("اضغط على الزر أدناه لإعطاء تحذير أو إنذار لعضو.")
-            .setColor(0xE74C3C);
-
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('btn_give_warn_main').setLabel('إعطاء تحذير ⚠️').setStyle(ButtonStyle.Danger)
-        );
-        await message.channel.send({ embeds: [embed], components: [row] });
+        warnings_data.warn_channel_id = message.channel.id;
+        saveWarningsData();
+        await updateWarningsMessage();
         try { await message.delete(); } catch (e) {}
     }
 
-    // 5. لوحة تخزين العيلة (STORAGE SYSTEM) بزرارين فقط (الصنف، الفاتورة)
     if (content === '!setup-storage') {
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('btn_storage_item').setLabel('الصنف').setStyle(ButtonStyle.Primary),
@@ -443,9 +489,8 @@ client.on('messageCreate', async (message) => {
         try { await message.delete(); } catch (e) {}
     }
 
-    // 6. أوامر التابلت
     if (content === '!show' || content === 'عرض' || content === 'الرسالة') {
-        let msg = await message.channel.send({ embeds: [buildShowEmbed()], components: [new ShowPanelView()] });
+        let msg = await message.channel.send({ embeds: [buildShowEmbed()], components: [showPanelRow()] });
         saveShowTracker(message.channel.id, msg.id);
         try { await message.delete(); } catch (e) {}
     }
@@ -466,7 +511,7 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-// التعامل مع التفاعلات والأزرار
+// التفاعلات
 client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton()) {
         const cid = interaction.customId;
@@ -475,7 +520,7 @@ client.on('interactionCreate', async (interaction) => {
             const modal = new ModalBuilder().setCustomId('task_delivery_modal').setTitle('تسليم التاسك');
             modal.addComponents(
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('task_name').setLabel('الاسم :').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('task_resources').setLabel('الموارد :').setStyle(TextInputStyle.Short).setRequired(false)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('task_resources').setLabel('الموارد :').setStyle(TextInputStyle.Paragraph).setRequired(false)),
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('task_money').setLabel('الفلوس :').setStyle(TextInputStyle.Short).setRequired(false)),
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('task_delivered_to').setLabel('سلمت لمين :').setStyle(TextInputStyle.Short).setRequired(true))
             );
@@ -507,15 +552,36 @@ client.on('interactionCreate', async (interaction) => {
                 await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة فقط.", ephemeral: true });
                 return;
             }
-            const modal = new ModalBuilder().setCustomId('warn_submit_modal').setTitle('إعطاء تحذير');
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('warn_target').setLabel('منشن العضو أو اسمه/ID:').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('warn_reason').setLabel('سبب التحذير:').setStyle(TextInputStyle.Paragraph).setRequired(true))
-            );
-            await interaction.showModal(modal);
+            let members = await interaction.guild.members.fetch();
+            let options = members.filter(m => !m.user.bot).map(m => ({ label: m.displayName.substring(0, 25), value: m.user.tag, emoji: '👤' })).slice(0, 25);
+
+            let select = new StringSelectMenuBuilder()
+                .setCustomId('warn_select_member')
+                .setPlaceholder('اختر العضو لإعطائه ون...')
+                .addOptions(options);
+
+            await interaction.reply({ content: 'اختر العضو المراد إعطاؤه ون:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
         }
 
-        // تفاعلات بوت STORAGE (زر الصنف وزر الفاتورة)
+        if (cid === 'btn_remove_warn_main') {
+            if (!checkTabletPermissions(interaction)) {
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة فقط.", ephemeral: true });
+                return;
+            }
+            let warnedKeys = Object.keys(warnings_data.warnings_list || {});
+            if (warnedKeys.length === 0) {
+                await interaction.reply({ content: "❌ لا توجد أي تحذيرات مسجلة حالياً لإزالتها.", ephemeral: true });
+                return;
+            }
+            let options = warnedKeys.map(tag => ({ label: tag.substring(0, 25), value: tag, emoji: '👤' })).slice(0, 25);
+            let select = new StringSelectMenuBuilder()
+                .setCustomId('warn_remove_select')
+                .setPlaceholder('اختر العضو لإزالة الون منه...')
+                .addOptions(options);
+
+            await interaction.reply({ content: 'اختر العضو لإزالة الون عنه:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
+        }
+
         if (cid === 'btn_storage_item') {
             let select = new StringSelectMenuBuilder()
                 .setCustomId('storage_item_action_select')
@@ -538,12 +604,14 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.reply({ content: 'اختر إجراء الفاتورة:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
         }
 
+        // موافقة / رفض التاسك (Embed كبير جداً)
         if (cid === 'approve_task_btn' || cid === 'reject_task_btn') {
             const isApprove = cid === 'approve_task_btn';
             const originalEmbed = interaction.message.embeds[0];
             const updatedEmbed = EmbedBuilder.from(originalEmbed)
                 .setColor(isApprove ? 0x2ECC71 : 0xE74C3C)
-                .setTitle(isApprove ? "TASK APPROVED ✅" : "لا لم يسلم الموارد");
+                .setTitle(isApprove ? "TASK APPROVED ✅" : "لا لم يسلم الموارد")
+                .addFields({ name: "النتيجة النهائية:", value: isApprove ? "تم قبول وتأكيد تسليم التاسك بنجاح من قبل الإدارة." : "تم رفض تسليم التاسك." });
 
             await interaction.update({ embeds: [updatedEmbed], components: [] });
 
@@ -555,12 +623,14 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
+        // موافقة / رفض الإجازة (Embed كبير جداً)
         if (cid === 'btn_approve_vacation' || cid === 'btn_reject_vacation') {
             const isApprove = cid === 'btn_approve_vacation';
             const originalEmbed = interaction.message.embeds[0];
             const updatedEmbed = EmbedBuilder.from(originalEmbed)
                 .setColor(isApprove ? 0x2ECC71 : 0xE74C3C)
-                .setTitle(isApprove ? "🌴 تم قبول الإجازة" : "❌ تم رفض الإجازة");
+                .setTitle(isApprove ? "🌴 تم قبول الإجازة" : "❌ تم رفض الإجازة")
+                .addFields({ name: "حالة الطلب:", value: isApprove ? "تمت الموافقة على طلب الإجازة بنجاح." : "تم رفض طلب الإجازة." });
 
             await interaction.update({ embeds: [updatedEmbed], components: [] });
 
@@ -608,7 +678,7 @@ client.on('interactionCreate', async (interaction) => {
                 .addOptions(MEMBERS_LIST.map(name => ({ label: name, value: name, emoji: "👤" })));
 
             await interaction.reply({
-                content: `اختر اسم الشخص لتحديث status **${tName}**[cite: 12]:`,
+                content: `اختر اسم الشخص لتحديث status **${tName}**:`,
                 components: [new ActionRowBuilder().addComponents(selectMenu)],
                 ephemeral: true
             });
@@ -627,9 +697,25 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // القوائم المنسدلة (Select Menus)
     if (interaction.isStringSelectMenu()) {
         let cid = interaction.customId;
+
+        if (cid === 'warn_select_member') {
+            let selectedTag = interaction.values[0];
+            let modal = new ModalBuilder().setCustomId(`warn_modal_${selectedTag}`).setTitle(`إعطاء ون لـ ${selectedTag}`);
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('warn_reason').setLabel('سبب الون :').setStyle(TextInputStyle.Paragraph).setRequired(true))
+            );
+            await interaction.showModal(modal);
+        }
+
+        if (cid === 'warn_remove_select') {
+            let selectedTag = interaction.values[0];
+            delete warnings_data.warnings_list[selectedTag];
+            saveWarningsData();
+            await updateWarningsMessage();
+            await interaction.update({ content: `🗑️ تم إزالة الون عن العضو (${selectedTag}) بنجاح وتحديث اللوحة!`, components: [] });
+        }
 
         if (cid === 'storage_item_action_select') {
             let choice = interaction.values[0];
@@ -659,7 +745,6 @@ client.on('interactionCreate', async (interaction) => {
                 );
                 await interaction.showModal(modal);
             } else if (choice === 'remove_invoice') {
-                // إظهار قائمة منسدلة بجميع أعضاء السيرفر لإزالة فاتورتهم
                 let members = await interaction.guild.members.fetch();
                 let options = members.map(m => ({ label: m.displayName.substring(0, 25), value: m.id, emoji: '👤' })).slice(0, 25);
                 
@@ -712,8 +797,8 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // النماذج (Modals)
     if (interaction.isModalSubmit()) {
+        // تسليم التاسك (Embed ضخم ومفصل بالكامل في الحالات الثلاث)
         if (interaction.customId === 'task_delivery_modal') {
             const name = interaction.fields.getTextInputValue('task_name');
             const resources = interaction.fields.getTextInputValue('task_resources') || 'لا يوجد';
@@ -725,7 +810,7 @@ client.on('interactionCreate', async (interaction) => {
             const logChannel = interaction.guild.channels.cache.get(TASK_LOG_CHANNEL_ID) || interaction.channel;
             const embed = new EmbedBuilder()
                 .setTitle("📥 إثبات تسليم جديد تحت المراجعة")
-                .setDescription(`👤 **العضو:** ${interaction.user}\n🆔 **ID:** \`${interaction.user.id}\`\n\n👤 **الاسم:** ${name}\n🎒 **الموارد:** \`${resources}\`\n💰 **الفلوس:** \`${money}\`\n🤝 **سلمت لمين:** \`${deliveredTo}\``)
+                .setDescription(`--- • ° ☆ : . ☽ . : ☆ ° . ---\n\n👤 **معلومات العضو:**\n• **الاسم:** ${name}\n• **ID:** \`${interaction.user.id}\`\n\n--- • ° ☆ : . ☽ . : ☆ ° . ---\n\n🎒 **الموارد:** \`${resources}\`\n💰 **الفلوس:** \`${money}\`\n🤝 **سلمت لمين:** \`${deliveredTo}\`\n\n--- • ° ☆ : . ☽ . : ☆ ° . ---\n\n⏰ **وقت التسليم:** ${new Date().toLocaleTimeString()} (بتاريخ ${new Date().toLocaleDateString()})`)
                 .setColor(0xF1C40F)
                 .setThumbnail(interaction.user.displayAvatarURL());
 
@@ -737,6 +822,7 @@ client.on('interactionCreate', async (interaction) => {
             await logChannel.send({ content: `📢 **إثبات تسليم من ${interaction.user} يتطلب مراجعة الإدارة:**`, embeds: [embed], components: [adminRow] });
         }
 
+        // تقديم الإجازة (Embed ضخم ومفصل بالكامل)
         if (interaction.customId === 'vacation_modal') {
             const name = interaction.fields.getTextInputValue('vacation_name');
             const duration = interaction.fields.getTextInputValue('vacation_duration');
@@ -747,7 +833,7 @@ client.on('interactionCreate', async (interaction) => {
             const logChannel = interaction.guild.channels.cache.get(VACATION_LOG_CHANNEL_ID) || interaction.channel;
             const embed = new EmbedBuilder()
                 .setTitle("🌴 طلب إجازة جديد تحت المراجعة")
-                .setDescription(`👤 **العضو:** ${interaction.user}\n🆔 **ID:** \`${interaction.user.id}\`\n\n📝 **الاسم:** ${name}\n📅 **مدة الإجازة:** ${duration}\n💬 **السبب:** ${reason}`)
+                .setDescription(`--- • ° ☆ : . ☽ . : ☆ ° . ---\n\n👤 **العضو:** ${interaction.user}\n🆔 **ID:** \`${interaction.user.id}\`\n\n--- • ° ☆ : . ☽ . : ☆ ° . ---\n\n📝 **الاسم:** ${name}\n📅 **مدة الإجازة:** ${duration}\n💬 **السبب:** ${reason}\n\n--- • ° ☆ : . ☽ . : ☆ ° . ---\n\n⏰ **وقت التقديم:** ${new Date().toLocaleTimeString()} (${new Date().toLocaleDateString()})`)
                 .setColor(0xF1C40F)
                 .setThumbnail(interaction.user.displayAvatarURL());
 
@@ -759,7 +845,24 @@ client.on('interactionCreate', async (interaction) => {
             await logChannel.send({ content: `📣 **طلب إجازة جديد من ${interaction.user}:**`, embeds: [embed], components: [adminRow] });
         }
 
-        // مودال إضافة صنف للمخزون
+        if (interaction.customId.startsWith('warn_modal_')) {
+            let targetTag = interaction.customId.replace('warn_modal_', '');
+            let reason = interaction.fields.getTextInputValue('warn_reason');
+
+            warnings_data.warnings_list[targetTag] = 1;
+            saveWarningsData();
+            await updateWarningsMessage();
+
+            await interaction.reply({ content: `⚠️ تم إعطاء ون لـ (${targetTag}) بنجاح وتحديث اللوحة!`, ephemeral: true });
+
+            let logChannel = interaction.guild.channels.cache.get(WARN_CHANNEL_ID) || interaction.channel;
+            let logEmbed = new EmbedBuilder()
+                .setTitle("WARN 1 ⚠️")
+                .setDescription(`👤 **العضو:** ${targetTag}\n👑 **بواسطة:** ${interaction.user}\n💬 **السبب:** ${reason}\n⏰ **الوقت:** ${new Date().toLocaleTimeString()} (${new Date().toLocaleDateString()})`)
+                .setColor(0xE74C3C);
+            await logChannel.send({ embeds: [logEmbed] });
+        }
+
         if (interaction.customId === 'storage_add_item_modal') {
             let itemName = interaction.fields.getTextInputValue('item_name');
             let itemQty = parseInt(interaction.fields.getTextInputValue('item_qty')) || 0;
@@ -768,7 +871,6 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.reply({ content: `✅ تم إضافة الصنف (${itemName}) بالكمية (${itemQty}) بنجاح!`, ephemeral: true });
         }
 
-        // مودال إزالة صنف من المخزون
         if (interaction.customId === 'storage_remove_item_modal') {
             let itemName = interaction.fields.getTextInputValue('item_name');
             if (storage_items[itemName]) {
@@ -780,7 +882,6 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // مودال طباعة الفاتورة (Embed أزرق يوحي بأن الشخص استلم شيء)
         if (interaction.customId === 'storage_print_invoice_modal') {
             let personName = interaction.fields.getTextInputValue('person_name');
             let invoiceDetails = interaction.fields.getTextInputValue('invoice_details');
@@ -794,21 +895,6 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle("🧾 فاتورة استلام مخزون عائلة _ STORAGE INVOICE")
                 .setDescription(`👤 **الشخص المستلم:** ${personName}\n📦 **ما تم استلامه:**\n\`\`\`text\n${invoiceDetails}\n\`\`\`\n👑 **بواسطة:** ${interaction.user}`)
                 .setColor(0x3498DB)
-                .setTimestamp();
-
-            await interaction.channel.send({ embeds: [embed] });
-        }
-
-        if (interaction.customId === 'warn_submit_modal') {
-            const target = interaction.fields.getTextInputValue('warn_target');
-            const reason = interaction.fields.getTextInputValue('warn_reason');
-
-            await interaction.reply({ content: `⚠️ تم تسجيل التحذير لـ ${target} بنجاح!`, ephemeral: true });
-
-            const embed = new EmbedBuilder()
-                .setTitle("⚠️ WARNING SYSTEM - تحذير جديد")
-                .setDescription(`👤 **العضو المستهدف:** ${target}\n👑 **بواسطة الإداري:** ${interaction.user}\n💬 **السبب:** ${reason}`)
-                .setColor(0xE74C3C)
                 .setTimestamp();
 
             await interaction.channel.send({ embeds: [embed] });
@@ -828,7 +914,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// تشغيل البوت بالتوكن الأساسي
+// تشغيل البوت
 import tokensList from "./tokens.js";
 let botToken = process.env.DISCORD_TOKEN;
 if (!botToken && tokensList && tokensList.length > 0) {
