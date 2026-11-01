@@ -102,7 +102,6 @@ const DEFAULT_STOCK = {
     "TABLET GANGS": 0
 };
 
-// تحميل وإدارة بيانات التابلت والتحذيرات
 function loadTabletsData() {
     if (fs.existsSync(DATA_FILE)) {
         try {
@@ -182,7 +181,6 @@ function saveLeaderboardData() {
     fs.writeFileSync(LEADERBOARD_DATA_FILE, JSON.stringify(db, null, 2), 'utf8');
 }
 
-// بيانات التحذيرات (Warnings Tracker)
 let warnings_data = { "warnings_list": {}, "warn_msg_id": null, "warn_channel_id": null };
 if (fs.existsSync(WARNINGS_FILE)) {
     try {
@@ -195,7 +193,6 @@ function saveWarningsData() {
     fs.writeFileSync(WARNINGS_FILE, JSON.stringify(warnings_data, null, 2), 'utf8');
 }
 
-// بيانات STORAGE
 let storage_items = {};
 if (fs.existsSync(STORAGE_FILE)) {
     try { storage_items = JSON.parse(fs.readFileSync(STORAGE_FILE, 'utf8')); } catch (e) {}
@@ -233,8 +230,8 @@ function buildWarningsEmbed() {
     if (totalWarned === 0) {
         desc += "لا يوجد أعضاء عليهم تحذيرات حالياً.";
     } else {
-        for (let [userTag, level] of Object.entries(list)) {
-            desc += `👤 **${userTag}** : ⚠️ **WARN ${level}**\n`;
+        for (let [userTag, data] of Object.entries(list)) {
+            desc += `👤 **${userTag}** : ⚠️ **WARN ${data.level}**\n`;
         }
     }
 
@@ -267,7 +264,6 @@ async function updateWarningsMessage() {
             } catch (err) {}
         }
 
-        // إذا لم تكن موجودة، ننشئ رسالة جديدة ونحفظ الأيدي
         let newMsg = await channel.send({ embeds: [buildWarningsEmbed()], components: [row] });
         warnings_data.warn_msg_id = newMsg.id;
         warnings_data.warn_channel_id = channel.id;
@@ -472,7 +468,6 @@ client.on('messageCreate', async (message) => {
         try { await message.delete(); } catch (e) {}
     }
 
-    // أمر الورنات المباشر في الغرفة المطلوبة
     if (content === '!setup-warn') {
         warnings_data.warn_channel_id = message.channel.id;
         saveWarningsData();
@@ -502,6 +497,7 @@ client.on('messageCreate', async (message) => {
             new ButtonBuilder().setCustomId('btn_tb_boosting_v20').setLabel('خدت LAPTOP Boosting').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId('btn_tb_house_v20').setLabel('خدت HOUSE TABLET').setStyle(ButtonStyle.Success)
         );
+        // تم ضبط زر TABLET GANGS ليكون باللون الرمادي الثانوي (Secondary) ليتناسق مع التصميم
         let row2 = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('btn_tb_gangs_v20').setLabel('خدت TABLET GANGS ⚪').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId('btn_tb_reset_v20').setLabel('🔄 تصفير القائمة (للإدارة)').setStyle(ButtonStyle.Secondary)
@@ -604,7 +600,6 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.reply({ content: 'اختر إجراء الفاتورة:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
         }
 
-        // موافقة / رفض التاسك (Embed كبير جداً)
         if (cid === 'approve_task_btn' || cid === 'reject_task_btn') {
             const isApprove = cid === 'approve_task_btn';
             const originalEmbed = interaction.message.embeds[0];
@@ -623,7 +618,6 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // موافقة / رفض الإجازة (Embed كبير جداً)
         if (cid === 'btn_approve_vacation' || cid === 'btn_reject_vacation') {
             const isApprove = cid === 'btn_approve_vacation';
             const originalEmbed = interaction.message.embeds[0];
@@ -678,7 +672,7 @@ client.on('interactionCreate', async (interaction) => {
                 .addOptions(MEMBERS_LIST.map(name => ({ label: name, value: name, emoji: "👤" })));
 
             await interaction.reply({
-                content: `اختر اسم الشخص لتحديث status **${tName}**:`,
+                content: `اختر اسم الشخص لتحديث status **${tName}**[cite: 12]:`,
                 components: [new ActionRowBuilder().addComponents(selectMenu)],
                 ephemeral: true
             });
@@ -702,7 +696,22 @@ client.on('interactionCreate', async (interaction) => {
 
         if (cid === 'warn_select_member') {
             let selectedTag = interaction.values[0];
-            let modal = new ModalBuilder().setCustomId(`warn_modal_${selectedTag}`).setTitle(`إعطاء ون لـ ${selectedTag}`);
+            let selectLevel = new StringSelectMenuBuilder()
+                .setCustomId(`warn_level_select_${selectedTag}`)
+                .setPlaceholder('اختر مستوى الون...')
+                .addOptions([
+                    { label: 'WARN 1 (يستمر لمدة 10 أيام)', value: '1', emoji: '⚠️' },
+                    { label: 'WARN 2 (يستمر لمدة 15 يوم)', value: '2', emoji: '⚠️' },
+                    { label: 'WARN 3 (دائم طول الوقت)', value: '3', emoji: '🚨' }
+                ]);
+            await interaction.update({ content: `اختر مستوى الون لـ (${selectedTag}):`, components: [new ActionRowBuilder().addComponents(selectLevel)] });
+        }
+
+        if (cid.startsWith('warn_level_select_')) {
+            let selectedTag = cid.replace('warn_level_select_', '');
+            let level = interaction.values[0];
+            
+            let modal = new ModalBuilder().setCustomId(`warn_modal_${selectedTag}_${level}`).setTitle(`سبب الون مستوى ${level}`);
             modal.addComponents(
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('warn_reason').setLabel('سبب الون :').setStyle(TextInputStyle.Paragraph).setRequired(true))
             );
@@ -780,6 +789,7 @@ client.on('interactionCreate', async (interaction) => {
 
             let items_list = current_status === "❌ لا يوجد" ? [] : current_status.split(" - ").map(x => x.trim()).filter(Boolean);
 
+            // تعديل: السماح للشخص بحمل أكثر من جهاز بدون مسح القديم، أو إزالة الجهاز لو تم الضغط عليه مجدداً
             let msg = "";
             if (items_list.includes(item_entry)) {
                 items_list = items_list.filter(x => x !== item_entry);
@@ -798,7 +808,6 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (interaction.isModalSubmit()) {
-        // تسليم التاسك (Embed ضخم ومفصل بالكامل في الحالات الثلاث)
         if (interaction.customId === 'task_delivery_modal') {
             const name = interaction.fields.getTextInputValue('task_name');
             const resources = interaction.fields.getTextInputValue('task_resources') || 'لا يوجد';
@@ -822,7 +831,6 @@ client.on('interactionCreate', async (interaction) => {
             await logChannel.send({ content: `📢 **إثبات تسليم من ${interaction.user} يتطلب مراجعة الإدارة:**`, embeds: [embed], components: [adminRow] });
         }
 
-        // تقديم الإجازة (Embed ضخم ومفصل بالكامل)
         if (interaction.customId === 'vacation_modal') {
             const name = interaction.fields.getTextInputValue('vacation_name');
             const duration = interaction.fields.getTextInputValue('vacation_duration');
@@ -846,21 +854,44 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (interaction.customId.startsWith('warn_modal_')) {
-            let targetTag = interaction.customId.replace('warn_modal_', '');
+            let parts = interaction.customId.split('_');
+            let level = parts[parts.length - 1];
+            let targetTag = parts.slice(2, parts.length - 1).join('_');
             let reason = interaction.fields.getTextInputValue('warn_reason');
 
-            warnings_data.warnings_list[targetTag] = 1;
+            warnings_data.warnings_list[targetTag] = { level: level };
             saveWarningsData();
             await updateWarningsMessage();
 
-            await interaction.reply({ content: `⚠️ تم إعطاء ون لـ (${targetTag}) بنجاح وتحديث اللوحة!`, ephemeral: true });
+            await interaction.reply({ content: `⚠️ تم إعطاء ون مستوى (${level}) لـ (${targetTag}) بنجاح!`, ephemeral: true });
 
             let logChannel = interaction.guild.channels.cache.get(WARN_CHANNEL_ID) || interaction.channel;
             let logEmbed = new EmbedBuilder()
-                .setTitle("WARN 1 ⚠️")
-                .setDescription(`👤 **العضو:** ${targetTag}\n👑 **بواسطة:** ${interaction.user}\n💬 **السبب:** ${reason}\n⏰ **الوقت:** ${new Date().toLocaleTimeString()} (${new Date().toLocaleDateString()})`)
+                .setTitle(`WARN ${level} ⚠️`)
+                .setDescription(`👤 **العضو:** ${targetTag}\n👑 **بواسطة:** ${interaction.user}\n💬 **السبب:** ${reason}\n⏰ **الوقت:** ${new Date().toLocaleTimeString()} (${new Date().toLocaleDateString()})\n⏳ **المدة:** ${level === '1' ? '10 أيام' : level === '2' ? '15 يوم' : 'دائم (طوال الوقت)'}`)
                 .setColor(0xE74C3C);
-            await logChannel.send({ embeds: [logEmbed] });
+            
+            let sentMsg = await logChannel.send({ embeds: [logEmbed] });
+
+            if (level === '1') {
+                setTimeout(async () => {
+                    try { await sentMsg.delete(); } catch(e) {}
+                    if (warnings_data.warnings_list[targetTag]?.level === '1') {
+                        delete warnings_data.warnings_list[targetTag];
+                        saveWarningsData();
+                        await updateWarningsMessage();
+                    }
+                }, 10 * 24 * 60 * 60 * 1000);
+            } else if (level === '2') {
+                setTimeout(async () => {
+                    try { await sentMsg.delete(); } catch(e) {}
+                    if (warnings_data.warnings_list[targetTag]?.level === '2') {
+                        delete warnings_data.warnings_list[targetTag];
+                        saveWarningsData();
+                        await updateWarningsMessage();
+                    }
+                }, 15 * 24 * 60 * 60 * 1000);
+            }
         }
 
         if (interaction.customId === 'storage_add_item_modal') {
