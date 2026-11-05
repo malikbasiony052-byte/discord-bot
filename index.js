@@ -79,20 +79,39 @@ const ALLOWED_ROLE_ID = 1283928161805140022;
 
 // ملفات البيانات
 const DATA_FILE = "tablets_data.json";
+const MEMBERS_FILE = "members_list.json";
 const STOCK_FILE = "tablets_stock.json";
 const MSG_TRACKER_FILE = "show_msg_tracker.json";
 const LEADERBOARD_DATA_FILE = "leaderboard_data.json";
 const WARNINGS_FILE = "warnings_data.json";
 const STORAGE_FILE = "storage_data.json";
 const STORAGE_INVOICES_FILE = "storage_invoices.json";
+const STORAGE_MSG_TRACKER = "storage_msg_tracker.json";
 
-// قوائم وأسماء الأعضاء والتابلت الثابتة
-const MEMBERS_LIST = [
+// قائمة الأعضاء الافتراضية (مضاف إليها نور)
+const DEFAULT_MEMBERS = [
     "النمر", "شناوي", "كيموز", "جنزوري", "بسيوني", 
     "منفاخ", "فرفشة", "شبح", "زياد شاهين", "السيد شحاتة", 
     "نوفير", "ديشا", "الشاطر", "ابو هاني", "يوسف المصري", 
-    "اورتيجا", "موزا", "مورا", "جوكس الونش", "ايجو", "السيوفي"
+    "اورتيجا", "موزا", "مورا", "جوكس الونش", "ايجو", "السيوفي", "نور"
 ];
+
+function loadMembersList() {
+    if (fs.existsSync(MEMBERS_FILE)) {
+        try {
+            return JSON.parse(fs.readFileSync(MEMBERS_FILE, 'utf8'));
+        } catch (e) {}
+    }
+    return [...DEFAULT_MEMBERS];
+}
+
+function saveMembersList() {
+    try {
+        fs.writeFileSync(MEMBERS_FILE, JSON.stringify(MEMBERS_LIST, null, 4), 'utf8');
+    } catch (e) {}
+}
+
+let MEMBERS_LIST = loadMembersList();
 
 const DEFAULT_STOCK = {
     "TABLET CHOP SHOP": 4,
@@ -103,18 +122,16 @@ const DEFAULT_STOCK = {
 };
 
 function loadTabletsData() {
+    let saved = {};
     if (fs.existsSync(DATA_FILE)) {
         try {
-            const saved = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-            let res = {};
-            for (let name of MEMBERS_LIST) {
-                res[name] = saved[name] || "❌ لا يوجد";
-            }
-            return res;
+            saved = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
         } catch (e) {}
     }
     let res = {};
-    for (let name of MEMBERS_LIST) res[name] = "❌ لا يوجد";
+    for (let name of MEMBERS_LIST) {
+        res[name] = saved[name] || "❌ لا يوجد";
+    }
     return res;
 }
 
@@ -197,13 +214,25 @@ let storage_items = {};
 if (fs.existsSync(STORAGE_FILE)) {
     try { storage_items = JSON.parse(fs.readFileSync(STORAGE_FILE, 'utf8')); } catch (e) {}
 }
-function saveStorageItems() { fs.writeFileSync(STORAGE_FILE, JSON.stringify(storage_items, null, 2), 'utf8'); }
+function saveStorageItems() { 
+    fs.writeFileSync(STORAGE_FILE, JSON.stringify(storage_items, null, 2), 'utf8'); 
+    updateStorageLivePanel();
+}
 
 let storage_invoices = {};
 if (fs.existsSync(STORAGE_INVOICES_FILE)) {
     try { storage_invoices = JSON.parse(fs.readFileSync(STORAGE_INVOICES_FILE, 'utf8')); } catch (e) {}
 }
 function saveStorageInvoices() { fs.writeFileSync(STORAGE_INVOICES_FILE, JSON.stringify(storage_invoices, null, 2), 'utf8'); }
+
+let storage_tracker = {};
+if (fs.existsSync(STORAGE_MSG_TRACKER)) {
+    try { storage_tracker = JSON.parse(fs.readFileSync(STORAGE_MSG_TRACKER, 'utf8')); } catch (e) {}
+}
+function saveStorageTracker(channel_id, message_id) {
+    storage_tracker = { channel_id, message_id };
+    fs.writeFileSync(STORAGE_MSG_TRACKER, JSON.stringify(storage_tracker, null, 2), 'utf8');
+}
 
 function buildStorageEmbed() {
     let desc = "";
@@ -220,6 +249,26 @@ function buildStorageEmbed() {
         .setDescription(`**المخزون الحالي :**\n\n${desc}`)
         .setColor(0x3498DB)
         .setTimestamp();
+}
+
+function storageButtonsRow() {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('btn_storage_item').setLabel('الصنف').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('btn_storage_invoice').setLabel('الفاتورة').setStyle(ButtonStyle.Success)
+    );
+}
+
+async function updateStorageLivePanel() {
+    if (!storage_tracker.channel_id || !storage_tracker.message_id) return;
+    try {
+        let channel = await client.channels.fetch(storage_tracker.channel_id);
+        if (channel) {
+            let msg = await channel.messages.fetch(storage_tracker.message_id);
+            if (msg) {
+                await msg.edit({ embeds: [buildStorageEmbed()], components: [storageButtonsRow()] });
+            }
+        }
+    } catch (e) {}
 }
 
 function buildWarningsEmbed() {
@@ -286,7 +335,6 @@ function parseChangeInput(current_val, input_str) {
     }
 }
 
-// تعديل أمر العرض !show ليظهر فقط من بحوزتهم تابلت
 function buildShowEmbed() {
     let embed = new EmbedBuilder()
         .setTitle("TABLETS SYSTEM _ نظام التابلت")
@@ -330,6 +378,23 @@ function buildTabletsLeaderboardEmbed() {
         .setDescription(description_text)
         .setColor(0x2B2D31)
         .setFooter({ text: "xXx TABLETS SYSTEM • Role Authorized Verification", iconURL: client.user?.displayAvatarURL() });
+}
+
+// أزرار لوحة التابلت المحدثة (مضاف إليها أزرار إدارة الأعضاء)
+function tabletsControlRows() {
+    let row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('btn_tb_robbery_v20').setLabel('خدت TABLET ROBBERY').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('btn_tb_chopshop_v20').setLabel('خدت TABLET CHOP SHOP 🟠').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('btn_tb_boosting_v20').setLabel('خدت LAPTOP Boosting').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_tb_house_v20').setLabel('خدت HOUSE TABLET').setStyle(ButtonStyle.Success)
+    );
+    let row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('btn_tb_gangs_v20').setLabel('خدت TABLET GANGS ⚪').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_add_member').setLabel('➕ إضافة عضو').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('btn_remove_member').setLabel('🗑️ إزالة عضو').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('btn_tb_reset_v20').setLabel('🔄 تصفير القائمة').setStyle(ButtonStyle.Secondary)
+    );
+    return [row1, row2];
 }
 
 async function updateLiveShowMessage() {
@@ -479,11 +544,8 @@ client.on('messageCreate', async (message) => {
     }
 
     if (content === '!setup-storage') {
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('btn_storage_item').setLabel('الصنف').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('btn_storage_invoice').setLabel('الفاتورة').setStyle(ButtonStyle.Success)
-        );
-        await message.channel.send({ embeds: [buildStorageEmbed()], components: [row] });
+        let msg = await message.channel.send({ embeds: [buildStorageEmbed()], components: [storageButtonsRow()] });
+        saveStorageTracker(message.channel.id, msg.id);
         try { await message.delete(); } catch (e) {}
     }
 
@@ -494,17 +556,7 @@ client.on('messageCreate', async (message) => {
     }
 
     if (content === '!tablets' || content === 'تابلت' || content === 'التابلت') {
-        let row1 = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('btn_tb_robbery_v20').setLabel('خدت TABLET ROBBERY').setStyle(ButtonStyle.Danger),
-            new ButtonBuilder().setCustomId('btn_tb_chopshop_v20').setLabel('خدت TABLET CHOP SHOP 🟠').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('btn_tb_boosting_v20').setLabel('خدت LAPTOP Boosting').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('btn_tb_house_v20').setLabel('خدت HOUSE TABLET').setStyle(ButtonStyle.Success)
-        );
-        let row2 = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('btn_tb_gangs_v20').setLabel('خدت TABLET GANGS ⚪').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('btn_tb_reset_v20').setLabel('🔄 تصفير القائمة (للإدارة)').setStyle(ButtonStyle.Secondary)
-        );
-        await message.channel.send({ embeds: [buildTabletsLeaderboardEmbed()], components: [row1, row2] });
+        await message.channel.send({ embeds: [buildTabletsLeaderboardEmbed()], components: tabletsControlRows() });
         try { await message.delete(); } catch (e) {}
     }
 });
@@ -582,7 +634,7 @@ client.on('interactionCreate', async (interaction) => {
         if (cid === 'btn_storage_item') {
             let select = new StringSelectMenuBuilder()
                 .setCustomId('storage_item_action_select')
-                .setPlaceholder('اختر الإجراء المطلوبة للصنف...')
+                .setPlaceholder('اختر الإجراء المطلوب للصنف...')
                 .addOptions([
                     { label: 'إضافة صنف', value: 'add_item', emoji: '➕' },
                     { label: 'إزالة صنف', value: 'remove_item', emoji: '➖' }
@@ -595,7 +647,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setCustomId('storage_invoice_action_select')
                 .setPlaceholder('اختر إجراء الفاتورة...')
                 .addOptions([
-                    { label: 'طباعة فاتورة ل شخص', value: 'print_invoice', emoji: '🖨️' },
+                    { label: 'طباعة فاتورة لشخص', value: 'print_invoice', emoji: '🖨️' },
                     { label: 'إزالة فاتورة', value: 'remove_invoice', emoji: '🗑️' }
                 ]);
             await interaction.reply({ content: 'اختر إجراء الفاتورة:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
@@ -653,6 +705,33 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.showModal(modal);
         }
 
+        // أزرار إضافة وإزالة عضو من القائمة
+        if (cid === 'btn_add_member') {
+            if (!checkTabletPermissions(interaction)) {
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة فقط.", ephemeral: true });
+                return;
+            }
+            let modal = new ModalBuilder().setCustomId('modal_add_member').setTitle('إضافة عضو جديد للقائمة');
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('new_member_name').setLabel('اسم العضو الجديد :').setStyle(TextInputStyle.Short).setRequired(true))
+            );
+            await interaction.showModal(modal);
+        }
+
+        if (cid === 'btn_remove_member') {
+            if (!checkTabletPermissions(interaction)) {
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة فقط.", ephemeral: true });
+                return;
+            }
+            let options = MEMBERS_LIST.map(name => ({ label: name, value: name, emoji: '👤' })).slice(0, 25);
+            let select = new StringSelectMenuBuilder()
+                .setCustomId('select_remove_member')
+                .setPlaceholder('اختر العضو المراد حذفه من القائمة...')
+                .addOptions(options);
+
+            await interaction.reply({ content: 'اختر العضو لحذفه:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
+        }
+
         let tabletMap = {
             'btn_tb_robbery_v20': ["TABLET ROBBERY", "🔴"],
             'btn_tb_chopshop_v20': ["TABLET CHOP SHOP", "🟠"],
@@ -670,7 +749,7 @@ client.on('interactionCreate', async (interaction) => {
             let selectMenu = new StringSelectMenuBuilder()
                 .setCustomId(`tablet_select_${cid}`)
                 .setPlaceholder('اختر اسم الشخص لتحديث جهازه...')
-                .addOptions(MEMBERS_LIST.map(name => ({ label: name, value: name, emoji: "👤" })));
+                .addOptions(MEMBERS_LIST.map(name => ({ label: name, value: name, emoji: "👤" })).slice(0, 25));
 
             await interaction.reply({
                 content: `اختر اسم الشخص لتحديث status **${tName}**[cite: 12]:`,
@@ -686,7 +765,7 @@ client.on('interactionCreate', async (interaction) => {
             }
             for (let name of MEMBERS_LIST) tablets_data[name] = "❌ لا يوجد";
             saveTabletsData();
-            await interaction.message.edit({ embeds: [buildTabletsLeaderboardEmbed()] });
+            await interaction.message.edit({ embeds: [buildTabletsLeaderboardEmbed()], components: tabletsControlRows() });
             await updateLiveShowMessage();
             await interaction.reply({ content: "🔄 تم تصفير جميع التابلت بنجاح!", ephemeral: true });
         }
@@ -727,19 +806,31 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.update({ content: `🗑️ تم إزالة الون عن العضو (${selectedName}) بنجاح وتحديث اللوحة!`, components: [] });
         }
 
+        // إزالة عضو من القائمة
+        if (cid === 'select_remove_member') {
+            let memberToRemove = interaction.values[0];
+            MEMBERS_LIST = MEMBERS_LIST.filter(n => n !== memberToRemove);
+            delete tablets_data[memberToRemove];
+            saveMembersList();
+            saveTabletsData();
+
+            await interaction.update({ content: `🗑️ تم إزالة العضو (**${memberToRemove}**) من القائمة بنجاح!`, components: [] });
+        }
+
         if (cid === 'storage_item_action_select') {
             let choice = interaction.values[0];
             if (choice === 'add_item') {
                 let modal = new ModalBuilder().setCustomId('storage_add_item_modal').setTitle('إضافة صنف للمخزون');
                 modal.addComponents(
                     new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('item_name').setLabel('اسم الصنف :').setStyle(TextInputStyle.Short).setRequired(true)),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('item_qty').setLabel('كمية الصنف :').setStyle(TextInputStyle.Short).setRequired(true))
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('item_qty').setLabel('الكمية المراد إضافتها :').setStyle(TextInputStyle.Short).setRequired(true))
                 );
                 await interaction.showModal(modal);
             } else if (choice === 'remove_item') {
-                let modal = new ModalBuilder().setCustomId('storage_remove_item_modal').setTitle('إزالة صنف من المخزون');
+                let modal = new ModalBuilder().setCustomId('storage_remove_item_modal').setTitle('إزالة/خصم صنف من المخزون');
                 modal.addComponents(
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('item_name').setLabel('اسم الصنف الذي تريد حذفه :').setStyle(TextInputStyle.Short).setRequired(true))
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('item_name').setLabel('اسم الصنف المراد خصمه :').setStyle(TextInputStyle.Short).setRequired(true)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('item_qty').setLabel('الكمية المراد خصمها :').setStyle(TextInputStyle.Short).setRequired(true))
                 );
                 await interaction.showModal(modal);
             }
@@ -748,28 +839,65 @@ client.on('interactionCreate', async (interaction) => {
         if (cid === 'storage_invoice_action_select') {
             let choice = interaction.values[0];
             if (choice === 'print_invoice') {
-                let modal = new ModalBuilder().setCustomId('storage_print_invoice_modal').setTitle('طباعة فاتورة');
-                modal.addComponents(
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('person_name').setLabel('اسم الشخص :').setStyle(TextInputStyle.Short).setRequired(true)),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('invoice_details').setLabel('ماذا استلم الشخص :').setStyle(TextInputStyle.Paragraph).setRequired(true))
-                );
-                await interaction.showModal(modal);
-            } else if (choice === 'remove_invoice') {
                 let options = MEMBERS_LIST.map(name => ({ label: name, value: name, emoji: '👤' })).slice(0, 25);
                 let select = new StringSelectMenuBuilder()
-                    .setCustomId('storage_remove_invoice_select')
-                    .setPlaceholder('اختر الشخص لإزالة فواتيره...')
+                    .setCustomId('storage_print_invoice_select_person')
+                    .setPlaceholder('اختر الشخص لطباعة الفاتورة له...')
                     .addOptions(options);
 
-                await interaction.reply({ content: 'اختر العضو المراد حذف فاتورته:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
+                await interaction.update({ content: 'اختر العضو المراد طباعة فاتورة له:', components: [new ActionRowBuilder().addComponents(select)] });
+            } else if (choice === 'remove_invoice') {
+                let invoiceHolders = Object.keys(storage_invoices);
+                if (invoiceHolders.length === 0) {
+                    await interaction.update({ content: '❌ لا توجد أي فواتير مسجلة لإزالتها.', components: [] });
+                    return;
+                }
+                let options = invoiceHolders.map(name => ({ label: name, value: name, emoji: '📄' })).slice(0, 25);
+                let select = new StringSelectMenuBuilder()
+                    .setCustomId('storage_remove_invoice_select')
+                    .setPlaceholder('اختر الشخص لإزالة فواتيره ومسح رسالته...')
+                    .addOptions(options);
+
+                await interaction.update({ content: 'اختر الشخص المراد إزالة فواتيره وتراجع مخزونه:', components: [new ActionRowBuilder().addComponents(select)] });
             }
+        }
+
+        if (cid === 'storage_print_invoice_select_person') {
+            let selectedName = interaction.values[0];
+            let modal = new ModalBuilder().setCustomId(`storage_print_invoice_modal_${selectedName}`).setTitle(`فاتورة لـ ${selectedName}`);
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('item_name').setLabel('اسم الصنف المستلم :').setStyle(TextInputStyle.Short).setRequired(true)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('item_qty').setLabel('الكمية التي أخذها :').setStyle(TextInputStyle.Short).setRequired(true))
+            );
+            await interaction.showModal(modal);
         }
 
         if (cid === 'storage_remove_invoice_select') {
             let targetName = interaction.values[0];
-            delete storage_invoices[targetName];
-            saveStorageInvoices();
-            await interaction.update({ content: `🗑️ تم إزالة فواتير العضو بنجاح!`, components: [] });
+            let invData = storage_invoices[targetName];
+
+            if (invData) {
+                let item = invData.itemName;
+                let qty = invData.itemQty || 0;
+                storage_items[item] = (storage_items[item] || 0) + qty;
+                saveStorageItems();
+
+                if (invData.channelId && invData.messageId) {
+                    try {
+                        let ch = await client.channels.fetch(invData.channelId);
+                        if (ch) {
+                            let msg = await ch.messages.fetch(invData.messageId);
+                            if (msg) await msg.delete();
+                        }
+                    } catch(e) {}
+                }
+
+                delete storage_invoices[targetName];
+                saveStorageInvoices();
+                await interaction.update({ content: `🗑️ تم إزالة فاتورة (${targetName}) ومسح رسالته، وإعادة الكمية (\`${qty}\` من ${item}) للمخزون بنجاح!`, components: [] });
+            } else {
+                await interaction.update({ content: `❌ لم يتم العثور على فاتورة نشطة لهذا الاسم.`, components: [] });
+            }
         }
 
         let mapping = {
@@ -799,6 +927,11 @@ client.on('interactionCreate', async (interaction) => {
 
             tablets_data[selected_name] = items_list.length > 0 ? items_list.join(" - ") : "❌ لا يوجد";
             saveTabletsData();
+
+            // تحديث رسالة القائمة التفاعلية الأساسية إن وجدت في نفس الرسالة أو الشات
+            try {
+                await interaction.message.edit({ embeds: [buildTabletsLeaderboardEmbed()], components: tabletsControlRows() });
+            } catch (err) {}
 
             await updateLiveShowMessage();
             await interaction.update({ content: msg, components: [] });
@@ -892,41 +1025,64 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
+        // إضافة عضو جديد للقائمة
+        if (interaction.customId === 'modal_add_member') {
+            let newName = interaction.fields.getTextInputValue('new_member_name').trim();
+            if (newName && !MEMBERS_LIST.includes(newName)) {
+                MEMBERS_LIST.push(newName);
+                tablets_data[newName] = "❌ لا يوجد";
+                saveMembersList();
+                saveTabletsData();
+                await interaction.reply({ content: `✅ تم إضافة العضو (**${newName}**) للقائمة بنجاح!`, ephemeral: true });
+            } else {
+                await interaction.reply({ content: `❌ هذا الاسم موجود مسبقاً أو فارغ!`, ephemeral: true });
+            }
+        }
+
         if (interaction.customId === 'storage_add_item_modal') {
             let itemName = interaction.fields.getTextInputValue('item_name');
             let itemQty = parseInt(interaction.fields.getTextInputValue('item_qty')) || 0;
+            
             storage_items[itemName] = (storage_items[itemName] || 0) + itemQty;
             saveStorageItems();
-            await interaction.reply({ content: `✅ تم إضافة الصنف (${itemName}) بالكمية (${itemQty}) بنجاح!`, ephemeral: true });
+            await interaction.reply({ content: `✅ تم إضافة الصنف (**${itemName}**) بالكمية (\`${itemQty}\`) وتحديث اللوحة الحية!`, ephemeral: true });
         }
 
         if (interaction.customId === 'storage_remove_item_modal') {
             let itemName = interaction.fields.getTextInputValue('item_name');
-            if (storage_items[itemName]) {
-                delete storage_items[itemName];
-                saveStorageItems();
-                await interaction.reply({ content: `🗑️ تم حذف الصنف (${itemName}) من المخزون بنجاح!`, ephemeral: true });
-            } else {
-                await interaction.reply({ content: `❌ هذا الصنف غير موجود في المخزون!`, ephemeral: true });
-            }
+            let itemQty = parseInt(interaction.fields.getTextInputValue('item_qty')) || 0;
+
+            storage_items[itemName] = (storage_items[itemName] || 0) - itemQty;
+            saveStorageItems();
+            await interaction.reply({ content: `🗑️ تم خصم كمية (\`${itemQty}\`) من الصنف (**${itemName}**) (المتبقي: \`${storage_items[itemName]}\`)!`, ephemeral: true });
         }
 
-        if (interaction.customId === 'storage_print_invoice_modal') {
-            let personName = interaction.fields.getTextInputValue('person_name');
-            let invoiceDetails = interaction.fields.getTextInputValue('invoice_details');
+        if (interaction.customId.startsWith('storage_print_invoice_modal_')) {
+            let selectedName = interaction.customId.replace('storage_print_invoice_modal_', '');
+            let itemName = interaction.fields.getTextInputValue('item_name');
+            let itemQty = parseInt(interaction.fields.getTextInputValue('item_qty')) || 0;
 
-            storage_invoices[interaction.user.id] = { personName, invoiceDetails };
-            saveStorageInvoices();
+            storage_items[itemName] = (storage_items[itemName] || 0) - itemQty;
+            saveStorageItems();
 
-            await interaction.reply({ content: `🖨️ تم طباعة وإرسال الفاتورة بنجاح!`, ephemeral: true });
+            await interaction.reply({ content: `🖨️ تم طباعة الفاتورة لـ (**${selectedName}**) وخصم كمية (\`${itemQty}\` من ${itemName}) تلقائياً من المخزون!`, ephemeral: true });
 
             let embed = new EmbedBuilder()
                 .setTitle("🧾 فاتورة استلام مخزون عائلة _ STORAGE INVOICE")
-                .setDescription(`👤 **الشخص المستلم:** ${personName}\n📦 **ما تم استلامه:**\n\`\`\`text\n${invoiceDetails}\n\`\`\`\n👑 **بواسطة:** ${interaction.user}`)
+                .setDescription(`👤 **الشخص المستلم:** ${selectedName}\n📦 **ما تم استلامه:** \`${itemQty}\` من **${itemName}**\n👑 **بواسطة:** ${interaction.user}`)
                 .setColor(0x3498DB)
                 .setTimestamp();
 
-            await interaction.channel.send({ embeds: [embed] });
+            let invMsg = await interaction.channel.send({ content: `📢 **فاتورة رسمية لـ:** ${selectedName}`, embeds: [embed] });
+
+            storage_invoices[selectedName] = {
+                personName: selectedName,
+                itemName: itemName,
+                itemQty: itemQty,
+                channelId: interaction.channel.id,
+                messageId: invMsg.id
+            };
+            saveStorageInvoices();
         }
 
         if (interaction.customId === 'change_stock_modal_custom') {
