@@ -82,13 +82,14 @@ const DATA_FILE = "tablets_data.json";
 const MEMBERS_FILE = "members_list.json";
 const STOCK_FILE = "tablets_stock.json";
 const MSG_TRACKER_FILE = "show_msg_tracker.json";
+const TABLET_PANEL_TRACKER = "tablet_panel_tracker.json";
 const LEADERBOARD_DATA_FILE = "leaderboard_data.json";
 const WARNINGS_FILE = "warnings_data.json";
 const STORAGE_FILE = "storage_data.json";
 const STORAGE_INVOICES_FILE = "storage_invoices.json";
 const STORAGE_MSG_TRACKER = "storage_msg_tracker.json";
 
-// قائمة الأعضاء الافتراضية (مضاف إليها نور)
+// قائمة الأعضاء الافتراضية
 const DEFAULT_MEMBERS = [
     "النمر", "شناوي", "كيموز", "جنزوري", "بسيوني", 
     "منفاخ", "فرفشة", "شبح", "زياد شاهين", "السيد شحاتة", 
@@ -172,6 +173,21 @@ function loadShowTracker() {
 function saveShowTracker(channel_id, message_id) {
     try {
         fs.writeFileSync(MSG_TRACKER_FILE, JSON.stringify({ channel_id, message_id }), 'utf8');
+    } catch (e) {}
+}
+
+function loadTabletPanelTracker() {
+    if (fs.existsSync(TABLET_PANEL_TRACKER)) {
+        try {
+            return JSON.parse(fs.readFileSync(TABLET_PANEL_TRACKER, 'utf8'));
+        } catch (e) {}
+    }
+    return {};
+}
+
+function saveTabletPanelTracker(channel_id, message_id) {
+    try {
+        fs.writeFileSync(TABLET_PANEL_TRACKER, JSON.stringify({ channel_id, message_id }), 'utf8');
     } catch (e) {}
 }
 
@@ -380,7 +396,6 @@ function buildTabletsLeaderboardEmbed() {
         .setFooter({ text: "xXx TABLETS SYSTEM • Role Authorized Verification", iconURL: client.user?.displayAvatarURL() });
 }
 
-// أزرار لوحة التابلت المحدثة (مضاف إليها أزرار إدارة الأعضاء)
 function tabletsControlRows() {
     let row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('btn_tb_robbery_v20').setLabel('خدت TABLET ROBBERY').setStyle(ButtonStyle.Danger),
@@ -395,6 +410,21 @@ function tabletsControlRows() {
         new ButtonBuilder().setCustomId('btn_tb_reset_v20').setLabel('🔄 تصفير القائمة').setStyle(ButtonStyle.Secondary)
     );
     return [row1, row2];
+}
+
+// دالة لتحديث لوحة التابلت الرئيسية تلقائياً في الشات
+async function updateTabletPanelMessage() {
+    let tracker = loadTabletPanelTracker();
+    if (!tracker.channel_id || !tracker.message_id) return;
+    try {
+        let channel = await client.channels.fetch(tracker.channel_id);
+        if (channel) {
+            let msg = await channel.messages.fetch(tracker.message_id);
+            if (msg) {
+                await msg.edit({ embeds: [buildTabletsLeaderboardEmbed()], components: tabletsControlRows() });
+            }
+        }
+    } catch (e) {}
 }
 
 async function updateLiveShowMessage() {
@@ -556,7 +586,8 @@ client.on('messageCreate', async (message) => {
     }
 
     if (content === '!tablets' || content === 'تابلت' || content === 'التابلت') {
-        await message.channel.send({ embeds: [buildTabletsLeaderboardEmbed()], components: tabletsControlRows() });
+        let msg = await message.channel.send({ embeds: [buildTabletsLeaderboardEmbed()], components: tabletsControlRows() });
+        saveTabletPanelTracker(message.channel.id, msg.id);
         try { await message.delete(); } catch (e) {}
     }
 });
@@ -705,7 +736,6 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.showModal(modal);
         }
 
-        // أزرار إضافة وإزالة عضو من القائمة
         if (cid === 'btn_add_member') {
             if (!checkTabletPermissions(interaction)) {
                 await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة فقط.", ephemeral: true });
@@ -752,7 +782,7 @@ client.on('interactionCreate', async (interaction) => {
                 .addOptions(MEMBERS_LIST.map(name => ({ label: name, value: name, emoji: "👤" })).slice(0, 25));
 
             await interaction.reply({
-                content: `اختر اسم الشخص لتحديث status **${tName}**[cite: 12]:`,
+                content: `اختر اسم الشخص لتحديث status **${tName}**:`,
                 components: [new ActionRowBuilder().addComponents(selectMenu)],
                 ephemeral: true
             });
@@ -765,7 +795,7 @@ client.on('interactionCreate', async (interaction) => {
             }
             for (let name of MEMBERS_LIST) tablets_data[name] = "❌ لا يوجد";
             saveTabletsData();
-            await interaction.message.edit({ embeds: [buildTabletsLeaderboardEmbed()], components: tabletsControlRows() });
+            await updateTabletPanelMessage();
             await updateLiveShowMessage();
             await interaction.reply({ content: "🔄 تم تصفير جميع التابلت بنجاح!", ephemeral: true });
         }
@@ -806,7 +836,6 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.update({ content: `🗑️ تم إزالة الون عن العضو (${selectedName}) بنجاح وتحديث اللوحة!`, components: [] });
         }
 
-        // إزالة عضو من القائمة
         if (cid === 'select_remove_member') {
             let memberToRemove = interaction.values[0];
             MEMBERS_LIST = MEMBERS_LIST.filter(n => n !== memberToRemove);
@@ -814,7 +843,9 @@ client.on('interactionCreate', async (interaction) => {
             saveMembersList();
             saveTabletsData();
 
-            await interaction.update({ content: `🗑️ تم إزالة العضو (**${memberToRemove}**) من القائمة بنجاح!`, components: [] });
+            await updateTabletPanelMessage();
+            await updateLiveShowMessage();
+            await interaction.update({ content: `🗑️ تم إزالة العضو (**${memberToRemove}**) من القائمة بنجاح وتحديث اللوحات!`, components: [] });
         }
 
         if (cid === 'storage_item_action_select') {
@@ -928,12 +959,10 @@ client.on('interactionCreate', async (interaction) => {
             tablets_data[selected_name] = items_list.length > 0 ? items_list.join(" - ") : "❌ لا يوجد";
             saveTabletsData();
 
-            // تحديث رسالة القائمة التفاعلية الأساسية إن وجدت في نفس الرسالة أو الشات
-            try {
-                await interaction.message.edit({ embeds: [buildTabletsLeaderboardEmbed()], components: tabletsControlRows() });
-            } catch (err) {}
-
+            // تحديث لوحة التابلت الأساسية وشاشة العرض تلقائياً فوراً
+            await updateTabletPanelMessage();
             await updateLiveShowMessage();
+
             await interaction.update({ content: msg, components: [] });
         }
     }
@@ -1025,7 +1054,6 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // إضافة عضو جديد للقائمة
         if (interaction.customId === 'modal_add_member') {
             let newName = interaction.fields.getTextInputValue('new_member_name').trim();
             if (newName && !MEMBERS_LIST.includes(newName)) {
@@ -1033,7 +1061,12 @@ client.on('interactionCreate', async (interaction) => {
                 tablets_data[newName] = "❌ لا يوجد";
                 saveMembersList();
                 saveTabletsData();
-                await interaction.reply({ content: `✅ تم إضافة العضو (**${newName}**) للقائمة بنجاح!`, ephemeral: true });
+
+                // تحديث اللوحات تلقائياً
+                await updateTabletPanelMessage();
+                await updateLiveShowMessage();
+
+                await interaction.reply({ content: `✅ تم إضافة العضو (**${newName}**) للقائمة وتحديث اللوحة بنجاح!`, ephemeral: true });
             } else {
                 await interaction.reply({ content: `❌ هذا الاسم موجود مسبقاً أو فارغ!`, ephemeral: true });
             }
