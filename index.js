@@ -75,7 +75,7 @@ const TASK_LOG_CHANNEL_ID = "1535001426302861403";
 const VACATION_LOG_CHANNEL_ID = "1552576612648624148";
 const LEADERBOARD_CHANNEL_ID = "1563202261281144952";
 const WARN_CHANNEL_ID = "1534996020092600433";
-const ALLOWED_ROLE_ID = "1283928161805140022"; // رول المسؤولين عن الورن والإدارة
+const ALLOWED_ROLE_ID = "1283928161805140022";
 
 // الرولات المطلوبة للأعضاء
 const ROLE_ID_1 = "1552642469789831168";
@@ -95,6 +95,7 @@ const WARNINGS_FILE = "warnings_data.json";
 const STORAGE_FILE = "storage_data.json";
 const STORAGE_INVOICES_FILE = "storage_invoices.json";
 const STORAGE_MSG_TRACKER = "storage_msg_tracker.json";
+const TASK_RESOURCES_FILE = "task_resources_data.json";
 
 // قائمة الأعضاء الافتراضية
 const DEFAULT_MEMBERS = [
@@ -120,6 +121,18 @@ function saveMembersList() {
 }
 
 let MEMBERS_LIST = loadMembersList();
+
+// نظام موارد التاسكات المعتمدة لكل شخص
+let task_resources_data = {};
+if (fs.existsSync(TASK_RESOURCES_FILE)) {
+    try {
+        task_resources_data = JSON.parse(fs.readFileSync(TASK_RESOURCES_FILE, 'utf8'));
+    } catch (e) {}
+}
+function saveTaskResourcesData() {
+    fs.writeFileSync(TASK_RESOURCES_FILE, JSON.stringify(task_resources_data, null, 2), 'utf8');
+    updateTaskPanelMessage();
+}
 
 // نظام بيانات الفلوس
 let money_data = { target_amount: 100000, payments: {} };
@@ -505,10 +518,19 @@ function taskControlRows() {
     );
 }
 
+// تصميم لوحة التاسكات لعرض الموارد المعتمدة بجانب اسم كل شخص
 function buildTaskPanelEmbed() {
+    let membersText = MEMBERS_LIST.map(n => {
+        let res = task_resources_data[n];
+        if (res) {
+            return `• **${n}** : \`${res}\``;
+        }
+        return `• **${n}**`;
+    }).join('\n');
+
     return new EmbedBuilder()
         .setTitle("📋 نظام التاسكات الجديد - TASKS SYSTEM")
-        .setDescription("إذا قمت بتسليم التاسك، اضغط على زر **تم تسليم التاسك 📥** أدناه لتحديد اسمك وإرسال الموارد للمراجعة.\n\n─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───\n\n👥 **الأعضاء المسجلين في القائمة:**\n" + MEMBERS_LIST.map(n => `• **${n}**`).join('\n'))
+        .setDescription("إذا قمت بتسليم التاسك، اضغط على زر **تم تسليم التاسك 📥** أدناه لتحديد اسمك وإرسال الموارد للمراجعة.\n\n─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───\n\n👥 **الأعضاء المسجلين في القائمة:**\n" + membersText)
         .setColor(0x2ECC71)
         .setFooter({ text: "xXx TASKS SYSTEM", iconURL: client.user?.displayAvatarURL() });
 }
@@ -654,8 +676,10 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
     } else if (hadRole && !hasRole) {
         MEMBERS_LIST = MEMBERS_LIST.filter(n => n !== memberName);
         delete tablets_data[memberName];
+        delete task_resources_data[memberName];
         saveMembersList();
         saveTabletsData();
+        saveTaskResourcesData();
         await updateTabletPanelMessage();
         await updateTaskPanelMessage();
         await updateLiveShowMessage();
@@ -912,8 +936,9 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.reply({ content: 'اختر إجراء الفاتورة:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
         }
 
-        if (cid === 'approve_task_btn' || cid === 'reject_task_btn') {
-            const isApprove = cid === 'approve_task_btn';
+        // موافقة أو رفض الإدارة على التاسك
+        if (cid.startsWith('approve_task_btn_') || cid === 'approve_task_btn' || cid === 'reject_task_btn') {
+            const isApprove = cid.startsWith('approve_task_btn');
             const originalEmbed = interaction.message.embeds[0];
             const updatedEmbed = EmbedBuilder.from(originalEmbed)
                 .setColor(isApprove ? 0x2ECC71 : 0xE74C3C)
@@ -923,6 +948,15 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.update({ embeds: [updatedEmbed], components: [] });
 
             if (isApprove) {
+                let parts = cid.split('approve_task_btn_');
+                if (parts.length > 1) {
+                    let memberName = parts[1];
+                    let resMatch = originalEmbed.description.match(/🎒 \*\*الموارد المسلمة:\*\* `([^`]+)`/);
+                    if (resMatch && resMatch[1]) {
+                        task_resources_data[memberName] = resMatch[1];
+                        saveTaskResourcesData();
+                    }
+                }
                 const userKey = `<@${interaction.user.id}>`;
                 db.resources[userKey] = (db.resources[userKey] || 0) + 1;
                 saveLeaderboardData();
@@ -1032,7 +1066,23 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isStringSelectMenu()) {
         let cid = interaction.customId;
 
-        // إزالة الورن ومسح رسالة السجل التفصيلية المرتبطة به
+        // عند اختيار الاسم تسليم التاسك: يفتح مودال "الموارد :" فوراً دون طباعة رسالة مؤقتة
+        if (cid === 'task_select_member') {
+            let selectedName = interaction.values[0];
+            let modal = new ModalBuilder().setCustomId(`task_delivery_modal_${selectedName}`).setTitle(`تسليم التاسك لـ ${selectedName}`);
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('task_resources')
+                        .setLabel('الموارد :')
+                        .setStyle(TextInputStyle.Paragraph)
+                        .setRequired(true)
+                )
+            );
+            await interaction.showModal(modal);
+            return;
+        }
+
         if (cid === 'warn_remove_select') {
             let selectedName = interaction.values[0];
             let warnObj = warnings_data.warnings_list[selectedName];
@@ -1086,19 +1136,12 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
-        if (cid === 'task_select_member') {
-            let selectedName = interaction.values[0];
-            let modal = new ModalBuilder().setCustomId(`task_delivery_modal_${selectedName}`).setTitle(`تسليم التاسك لـ ${selectedName}`);
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('task_resources').setLabel('الموارد المسلمة :').setStyle(TextInputStyle.Paragraph).setRequired(true))
-            );
-            await interaction.update({ content: `✅ تم اختيار العضو (**${selectedName}**)، يرجى إكمال نموذج الموارد:`, components: [] });
-        }
-
         if (cid === 'task_select_remove_member') {
             let memberToRemove = interaction.values[0];
             MEMBERS_LIST = MEMBERS_LIST.filter(n => n !== memberToRemove);
+            delete task_resources_data[memberToRemove];
             saveMembersList();
+            saveTaskResourcesData();
             await updateTaskPanelMessage();
             await interaction.update({ content: `🗑️ تم إزالة العضو (**${memberToRemove}**) من قائمة التاسكات وتحديث اللوحة بنجاح!`, components: [] });
         }
@@ -1107,8 +1150,10 @@ client.on('interactionCreate', async (interaction) => {
             let memberToRemove = interaction.values[0];
             MEMBERS_LIST = MEMBERS_LIST.filter(n => n !== memberToRemove);
             delete tablets_data[memberToRemove];
+            delete task_resources_data[memberToRemove];
             saveMembersList();
             saveTabletsData();
+            saveTaskResourcesData();
 
             await updateTabletPanelMessage();
             await updateLiveShowMessage();
@@ -1234,7 +1279,29 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (interaction.isModalSubmit()) {
-        // معالجة إعطاء الورن وإرسال رسالة السجل التفصيلية فقط
+        // تسليم التاسك: يرسل للإدارة زر موافقة مرتبط باسم الشخص
+        if (interaction.customId.startsWith('task_delivery_modal_')) {
+            const memberName = interaction.customId.replace('task_delivery_modal_', '');
+            const resources = interaction.fields.getTextInputValue('task_resources') || 'لا يوجد';
+
+            await interaction.reply({ content: `✅ تم إرسال إثبات تسليم التاسك لـ (${memberName}) للإدارة بنجاح!`, ephemeral: true });
+
+            const logChannel = interaction.guild.channels.cache.get(TASK_LOG_CHANNEL_ID) || interaction.channel;
+            const embed = new EmbedBuilder()
+                .setTitle("📥 إثبات تسليم تاسك جديد تحت المراجعة")
+                .setDescription(`--- • ° ☆ : . ☽ . : ☆ ° . ---\n\n👤 **العضو المُسَلِّم:** ${memberName}\n🆔 **ID صاحب التفاعل:** \`${interaction.user.id}\`\n\n--- • ° ☆ : . ☽ . : ☆ ° . ---\n\n🎒 **الموارد المسلمة:** \`${resources}\`\n\n--- • ° ☆ : . ☽ . : ☆ ° . ---\n\n⏰ **وقت التسليم:** ${new Date().toLocaleTimeString()} (${new Date().toLocaleDateString()})`)
+                .setColor(0xF1C40F)
+                .setThumbnail(interaction.user.displayAvatarURL());
+
+            const adminRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(`approve_task_btn_${memberName}`).setLabel('نعم سلم التاسك').setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId('reject_task_btn').setLabel('لا لم يسلم التاسك').setStyle(ButtonStyle.Danger)
+            );
+
+            await logChannel.send({ content: `📢 **إثبات تسليم من العضو (${memberName}) يتطلب مراجعة الإدارة:**`, embeds: [embed], components: [adminRow] });
+            return;
+        }
+
         if (interaction.customId.startsWith('warn_modal_')) {
             let parts = interaction.customId.split('_');
             let level = parts[parts.length - 1];
@@ -1285,28 +1352,6 @@ client.on('interactionCreate', async (interaction) => {
             saveMoneyData();
 
             await interaction.reply({ content: `✅ تم تسجيل مبلغ (\`${amount}\`) لـ (**${payerName}**) بنجاح وتحديث لوحة الميزانية!`, ephemeral: true });
-            return;
-        }
-
-        if (interaction.customId.startsWith('task_delivery_modal_')) {
-            const memberName = interaction.customId.replace('task_delivery_modal_', '');
-            const resources = interaction.fields.getTextInputValue('task_resources') || 'لا يوجد';
-
-            await interaction.reply({ content: `✅ تم إرسال إثبات تسليم التاسك لـ (${memberName}) للإدارة بنجاح!`, ephemeral: true });
-
-            const logChannel = interaction.guild.channels.cache.get(TASK_LOG_CHANNEL_ID) || interaction.channel;
-            const embed = new EmbedBuilder()
-                .setTitle("📥 إثبات تسليم تاسك جديد تحت المراجعة")
-                .setDescription(`--- • ° ☆ : . ☽ . : ☆ ° . ---\n\n👤 **العضو المُسَلِّم:** ${memberName}\n🆔 **ID صاحب التفاعل:** \`${interaction.user.id}\`\n\n--- • ° ☆ : . ☽ . : ☆ ° . ---\n\n🎒 **الموارد المسلمة:** \`${resources}\`\n\n--- • ° ☆ : . ☽ . : ☆ ° . ---\n\n⏰ **وقت التسليم:** ${new Date().toLocaleTimeString()} (${new Date().toLocaleDateString()})`)
-                .setColor(0xF1C40F)
-                .setThumbnail(interaction.user.displayAvatarURL());
-
-            const adminRow = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('approve_task_btn').setLabel('نعم سلم التاسك').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId('reject_task_btn').setLabel('لا لم يسلم التاسك').setStyle(ButtonStyle.Danger)
-            );
-
-            await logChannel.send({ content: `📢 **إثبات تسليم من العضو (${memberName}) يتطلب مراجعة الإدارة:**`, embeds: [embed], components: [adminRow] });
             return;
         }
 
