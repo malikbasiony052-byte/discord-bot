@@ -74,9 +74,9 @@ const client = new Client({
 const VACATION_LOG_CHANNEL_ID = "1552576612648624148";
 const LEADERBOARD_CHANNEL_ID = "1563202261281144952";
 const WARN_CHANNEL_ID = "1534996020092600433";
-const ALLOWED_ROLE_ID = "1283928161805140022";
+const ALLOWED_ROLE_ID = "1283928161805140022"; // الرتبة المحددة فقط
 
-// الرولات المطلوبة للأعضاء
+// الرولات المطلوبة للأعضاء (الربط التلقائي)
 const ROLE_ID_1 = "1552642469789831168";
 const ROLE_ID_2 = "1568516316233465966";
 
@@ -582,6 +582,7 @@ function showPanelRow() {
     );
 }
 
+// دقة فحص الصلاحيات الموحدة: الأدمن أو الرتبة المحددة فقط
 function checkTabletPermissions(interaction) {
     let user = interaction.member;
     let has_allowed_role = user && user.roles.cache.has(ALLOWED_ROLE_ID);
@@ -774,35 +775,41 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton()) {
         const cid = interaction.customId;
 
-        if (cid === 'btn_money_add_payment') {
-            let modal = new ModalBuilder().setCustomId('money_add_modal').setTitle('تسجيل مبلغ مدفوع');
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('payer_name').setLabel('الاسم (مثال: بسيوني)').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('payer_amount').setLabel('سلم كام (مثال: 10000)').setStyle(TextInputStyle.Short).setRequired(true))
-            );
-            await interaction.showModal(modal);
-            return;
-        }
-
-        if (cid === 'btn_money_remove_person') {
-            let payers = Object.keys(money_data.payments || {});
-            if (payers.length === 0) {
-                await interaction.reply({ content: "❌ لا توجد أي أسماء مسجلة في القائمة حالياً.", ephemeral: true });
+        // حصر أزرار الفلوس للأدمن والرتبة المحددة فقط
+        if (cid === 'btn_money_add_payment' || cid === 'btn_money_remove_person') {
+            if (!checkTabletPermissions(interaction)) {
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
                 return;
             }
-            let options = payers.map(name => ({ label: name, value: name, emoji: '👤' })).slice(0, 25);
-            let select = new StringSelectMenuBuilder()
-                .setCustomId('money_remove_select_person')
-                .setPlaceholder('اختر الشخص لإزالته من القائمة...')
-                .addOptions(options);
+            if (cid === 'btn_money_add_payment') {
+                let modal = new ModalBuilder().setCustomId('money_add_modal').setTitle('تسجيل مبلغ مدفوع');
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('payer_name').setLabel('الاسم (مثال: بسيوني)').setStyle(TextInputStyle.Short).setRequired(true)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('payer_amount').setLabel('سلم كام (مثال: 10000)').setStyle(TextInputStyle.Short).setRequired(true))
+                );
+                await interaction.showModal(modal);
+                return;
+            }
+            if (cid === 'btn_money_remove_person') {
+                let payers = Object.keys(money_data.payments || {});
+                if (payers.length === 0) {
+                    await interaction.reply({ content: "❌ لا توجد أي أسماء مسجلة في القائمة حالياً.", ephemeral: true });
+                    return;
+                }
+                let options = payers.map(name => ({ label: name, value: name, emoji: '👤' })).slice(0, 25);
+                let select = new StringSelectMenuBuilder()
+                    .setCustomId('money_remove_select_person')
+                    .setPlaceholder('اختر الشخص لإزالته من القائمة...')
+                    .addOptions(options);
 
-            await interaction.reply({ content: 'اختر الشخص المراد حذفه من سجل الفلوس:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
-            return;
+                await interaction.reply({ content: 'اختر الشخص المراد حذفه من سجل الفلوس:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
+                return;
+            }
         }
 
         if (cid === 'btn_give_warn_main') {
             if (!checkTabletPermissions(interaction)) {
-                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن والرول المحدد فقط.", ephemeral: true });
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
                 return;
             }
             let guildMembers = await interaction.guild.members.fetch();
@@ -828,7 +835,7 @@ client.on('interactionCreate', async (interaction) => {
 
         if (cid === 'btn_remove_warn_main') {
             if (!checkTabletPermissions(interaction)) {
-                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن والرول المحدد فقط.", ephemeral: true });
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
                 return;
             }
             let warnedKeys = Object.keys(warnings_data.warnings_list || {});
@@ -845,52 +852,52 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.reply({ content: 'اختر العضو لإزالة الورن عنه:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
         }
 
-        if (cid === 'submit_task_main_btn') {
-            let options = MEMBERS_LIST.map(name => ({ label: name, value: name, emoji: '👤' })).slice(0, 25);
-            let select = new StringSelectMenuBuilder()
-                .setCustomId('task_select_member')
-                .setPlaceholder('اختر اسم الشخص لتسجيل الموارد له...')
-                .addOptions(options);
-
-            await interaction.reply({ content: 'اختر اسم الشخص لتسجيل الموارد له مباشرة:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
-        }
-
-        if (cid === 'btn_task_add_member') {
+        // حصر أزرار التاسكات للإدارة فقط
+        if (cid === 'submit_task_main_btn' || cid === 'btn_task_add_member' || cid === 'btn_task_remove_member') {
             if (!checkTabletPermissions(interaction)) {
-                await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة فقط.", ephemeral: true });
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
                 return;
             }
-            let modal = new ModalBuilder().setCustomId('task_modal_add_member').setTitle('إضافة عضو جديد لبوت التاسكات');
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('new_member_name').setLabel('اسم العضو الجديد :').setStyle(TextInputStyle.Short).setRequired(true))
-            );
-            await interaction.showModal(modal);
-        }
+            if (cid === 'submit_task_main_btn') {
+                let options = MEMBERS_LIST.map(name => ({ label: name, value: name, emoji: '👤' })).slice(0, 25);
+                let select = new StringSelectMenuBuilder()
+                    .setCustomId('task_select_member')
+                    .setPlaceholder('اختر اسم الشخص لتسجيل الموارد له...')
+                    .addOptions(options);
 
-        if (cid === 'btn_task_remove_member') {
-            if (!checkTabletPermissions(interaction)) {
-                await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة فقط.", ephemeral: true });
+                await interaction.reply({ content: 'اختر اسم الشخص لتسجيل الموارد له مباشرة:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
                 return;
             }
-            let guildMembers = await interaction.guild.members.fetch();
-            let eligibleMembers = MEMBERS_LIST.filter(memberName => {
-                let found = guildMembers.find(m => m.displayName.includes(memberName) || m.user.username.includes(memberName));
-                if (!found) return true;
-                return found.roles.cache.has(ROLE_ID_1) || found.roles.cache.has(ROLE_ID_2);
-            });
-
-            if (eligibleMembers.length === 0) {
-                await interaction.reply({ content: "❌ لا يوجد أعضاء مطابقين للرولات المحددة حالياً في القائمة.", ephemeral: true });
+            if (cid === 'btn_task_add_member') {
+                let modal = new ModalBuilder().setCustomId('task_modal_add_member').setTitle('إضافة عضو جديد لبوت التاسكات');
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('new_member_name').setLabel('اسم العضو الجديد :').setStyle(TextInputStyle.Short).setRequired(true))
+                );
+                await interaction.showModal(modal);
                 return;
             }
+            if (cid === 'btn_task_remove_member') {
+                let guildMembers = await interaction.guild.members.fetch();
+                let eligibleMembers = MEMBERS_LIST.filter(memberName => {
+                    let found = guildMembers.find(m => m.displayName.includes(memberName) || m.user.username.includes(memberName));
+                    if (!found) return true;
+                    return found.roles.cache.has(ROLE_ID_1) || found.roles.cache.has(ROLE_ID_2);
+                });
 
-            let options = eligibleMembers.map(name => ({ label: name, value: name, emoji: '👤' })).slice(0, 25);
-            let select = new StringSelectMenuBuilder()
-                .setCustomId('task_select_remove_member')
-                .setPlaceholder('اختر العضو (الذي يحمل الرولات المطلوبة) لحذفه...')
-                .addOptions(options);
+                if (eligibleMembers.length === 0) {
+                    await interaction.reply({ content: "❌ لا يوجد أعضاء مطابقين للرولات المحددة حالياً في القائمة.", ephemeral: true });
+                    return;
+                }
 
-            await interaction.reply({ content: 'اختر العضو لحذفه من قائمة التاسكات:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
+                let options = eligibleMembers.map(name => ({ label: name, value: name, emoji: '👤' })).slice(0, 25);
+                let select = new StringSelectMenuBuilder()
+                    .setCustomId('task_select_remove_member')
+                    .setPlaceholder('اختر العضو لحذفه...')
+                    .addOptions(options);
+
+                await interaction.reply({ content: 'اختر العضو لحذفه من قائمة التاسكات:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
+                return;
+            }
         }
 
         if (cid === 'btn_main_vacation_app') {
@@ -914,6 +921,10 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (cid === 'btn_storage_item') {
+            if (!checkTabletPermissions(interaction)) {
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
+                return;
+            }
             let select = new StringSelectMenuBuilder()
                 .setCustomId('storage_item_action_select')
                 .setPlaceholder('اختر الإجراء المطلوب للصنف...')
@@ -925,6 +936,10 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (cid === 'btn_storage_invoice') {
+            if (!checkTabletPermissions(interaction)) {
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
+                return;
+            }
             let select = new StringSelectMenuBuilder()
                 .setCustomId('storage_invoice_action_select')
                 .setPlaceholder('اختر إجراء الفاتورة...')
@@ -936,6 +951,10 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (cid === 'btn_approve_vacation' || cid === 'btn_reject_vacation') {
+            if (!checkTabletPermissions(interaction)) {
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
+                return;
+            }
             const isApprove = cid === 'btn_approve_vacation';
             const originalEmbed = interaction.message.embeds[0];
             const updatedEmbed = EmbedBuilder.from(originalEmbed)
@@ -955,7 +974,7 @@ client.on('interactionCreate', async (interaction) => {
 
         if (cid === 'btn_show_change_modal_v2') {
             if (!checkTabletPermissions(interaction)) {
-                await interaction.reply({ content: "❌ هذا الإجراء مخصص للرتب المصرح لها فقط.", ephemeral: true });
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
                 return;
             }
             let modal = new ModalBuilder().setCustomId('change_stock_modal_custom').setTitle('تقديم طلب تغيير');
@@ -971,7 +990,7 @@ client.on('interactionCreate', async (interaction) => {
 
         if (cid === 'btn_add_member') {
             if (!checkTabletPermissions(interaction)) {
-                await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة فقط.", ephemeral: true });
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
                 return;
             }
             let modal = new ModalBuilder().setCustomId('modal_add_member').setTitle('إضافة عضو جديد للقائمة');
@@ -983,7 +1002,7 @@ client.on('interactionCreate', async (interaction) => {
 
         if (cid === 'btn_remove_member') {
             if (!checkTabletPermissions(interaction)) {
-                await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة فقط.", ephemeral: true });
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
                 return;
             }
             let options = MEMBERS_LIST.map(name => ({ label: name, value: name, emoji: '👤' })).slice(0, 25);
@@ -1005,7 +1024,7 @@ client.on('interactionCreate', async (interaction) => {
 
         if (tabletMap[cid]) {
             if (!checkTabletPermissions(interaction)) {
-                await interaction.reply({ content: "❌ هذا الإجراء مخصص لأصحاب الرتبة المصرح لها فقط.", ephemeral: true });
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
                 return;
             }
             let [tName, tEmoji] = tabletMap[cid];
@@ -1023,7 +1042,7 @@ client.on('interactionCreate', async (interaction) => {
 
         if (cid === 'btn_tb_reset_v20') {
             if (!checkTabletPermissions(interaction)) {
-                await interaction.reply({ content: "❌ هذا الإجراء مخصص للرتب المصرح لها فقط.", ephemeral: true });
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
                 return;
             }
             for (let name of MEMBERS_LIST) tablets_data[name] = "❌ لا يوجد";
@@ -1037,8 +1056,11 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isStringSelectMenu()) {
         let cid = interaction.customId;
 
-        // عند اختيار اسم الشخص لتسليم التاسك: يفتح مودال "الموارد :" فوراً
         if (cid === 'task_select_member') {
+            if (!checkTabletPermissions(interaction)) {
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
+                return;
+            }
             let selectedName = interaction.values[0];
             let modal = new ModalBuilder().setCustomId(`task_delivery_modal_${selectedName}`).setTitle(`تسجيل موارد لـ ${selectedName}`);
             modal.addComponents(
@@ -1250,7 +1272,6 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (interaction.isModalSubmit()) {
-        // عند إرسال الموارد من المودال: يتم وضعها مباشرة بجانب اسم الشخص في اللوحة بدون إرسال رسالة لوج للإدارة
         if (interaction.customId.startsWith('task_delivery_modal_')) {
             const memberName = interaction.customId.replace('task_delivery_modal_', '');
             const resources = interaction.fields.getTextInputValue('task_resources') || 'لا يوجد';
