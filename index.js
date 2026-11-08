@@ -75,7 +75,11 @@ const TASK_LOG_CHANNEL_ID = "1535001426302861403";
 const VACATION_LOG_CHANNEL_ID = "1552576612648624148";
 const LEADERBOARD_CHANNEL_ID = "1563202261281144952";
 const WARN_CHANNEL_ID = "1534996020092600433";
-const ALLOWED_ROLE_ID = 1283928161805140022;
+const ALLOWED_ROLE_ID = "1283928161805140022"; // رول المسؤولين عن الورن والإدارة
+
+// الرولات المطلوبة للأعضاء
+const ROLE_ID_1 = "1552642469789831168";
+const ROLE_ID_2 = "1568516316233465966";
 
 // ملفات البيانات
 const DATA_FILE = "tablets_data.json";
@@ -83,6 +87,9 @@ const MEMBERS_FILE = "members_list.json";
 const STOCK_FILE = "tablets_stock.json";
 const MSG_TRACKER_FILE = "show_msg_tracker.json";
 const TABLET_PANEL_TRACKER = "tablet_panel_tracker.json";
+const TASK_PANEL_TRACKER = "task_panel_tracker.json";
+const MONEY_DATA_FILE = "money_system_data.json";
+const MONEY_PANEL_TRACKER = "money_panel_tracker.json";
 const LEADERBOARD_DATA_FILE = "leaderboard_data.json";
 const WARNINGS_FILE = "warnings_data.json";
 const STORAGE_FILE = "storage_data.json";
@@ -113,6 +120,28 @@ function saveMembersList() {
 }
 
 let MEMBERS_LIST = loadMembersList();
+
+// نظام بيانات الفلوس
+let money_data = { target_amount: 100000, payments: {} };
+if (fs.existsSync(MONEY_DATA_FILE)) {
+    try {
+        const loadedMoney = JSON.parse(fs.readFileSync(MONEY_DATA_FILE, 'utf8'));
+        if (typeof loadedMoney === 'object') Object.assign(money_data, loadedMoney);
+    } catch (e) {}
+}
+function saveMoneyData() {
+    fs.writeFileSync(MONEY_DATA_FILE, JSON.stringify(money_data, null, 2), 'utf8');
+    updateMoneyLivePanel();
+}
+
+let money_tracker = {};
+if (fs.existsSync(MONEY_PANEL_TRACKER)) {
+    try { money_tracker = JSON.parse(fs.readFileSync(MONEY_PANEL_TRACKER, 'utf8')); } catch (e) {}
+}
+function saveMoneyTracker(channel_id, message_id) {
+    money_tracker = { channel_id, message_id };
+    fs.writeFileSync(MONEY_PANEL_TRACKER, JSON.stringify(money_tracker, null, 2), 'utf8');
+}
 
 const DEFAULT_STOCK = {
     "TABLET CHOP SHOP": 4,
@@ -188,6 +217,21 @@ function loadTabletPanelTracker() {
 function saveTabletPanelTracker(channel_id, message_id) {
     try {
         fs.writeFileSync(TABLET_PANEL_TRACKER, JSON.stringify({ channel_id, message_id }), 'utf8');
+    } catch (e) {}
+}
+
+function loadTaskPanelTracker() {
+    if (fs.existsSync(TASK_PANEL_TRACKER)) {
+        try {
+            return JSON.parse(fs.readFileSync(TASK_PANEL_TRACKER, 'utf8'));
+        } catch (e) {}
+    }
+    return {};
+}
+
+function saveTaskPanelTracker(channel_id, message_id) {
+    try {
+        fs.writeFileSync(TASK_PANEL_TRACKER, JSON.stringify({ channel_id, message_id }), 'utf8');
     } catch (e) {}
 }
 
@@ -287,16 +331,57 @@ async function updateStorageLivePanel() {
     } catch (e) {}
 }
 
+function buildMoneyEmbed() {
+    let target = money_data.target_amount || 100000;
+    let desc = `💰 **المبلغ المطلوب الأساسي :** \`${target}\`\n\n**الاشخاص الي سلموا فلوس :**\n\n`;
+
+    let payments = money_data.payments || {};
+    if (Object.keys(payments).length === 0) {
+        desc += "لا توجد أي مبالغ مسجلة حتى الآن.";
+    } else {
+        for (let [name, paid] of Object.entries(payments)) {
+            let remaining = target - paid;
+            desc += `• **${name}** : سلم ${paid} من (${target}) فاضل (${remaining})\n`;
+        }
+    }
+
+    return new EmbedBuilder()
+        .setTitle("💵 نظام الميزانية والفلوس - MONEY SYSTEM")
+        .setDescription(desc)
+        .setColor(0x1ABC9C)
+        .setFooter({ text: "xXx MONEY SYSTEM", iconURL: client.user?.displayAvatarURL() });
+}
+
+function moneyControlRows() {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('btn_money_add_payment').setLabel('شخص ما سلم فلوس 💵').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('btn_money_remove_person').setLabel('إزالة شخص 🗑️').setStyle(ButtonStyle.Danger)
+    );
+}
+
+async function updateMoneyLivePanel() {
+    if (!money_tracker.channel_id || !money_tracker.message_id) return;
+    try {
+        let channel = await client.channels.fetch(money_tracker.channel_id);
+        if (channel) {
+            let msg = await channel.messages.fetch(money_tracker.message_id);
+            if (msg) {
+                await msg.edit({ embeds: [buildMoneyEmbed()], components: [moneyControlRows()] });
+            }
+        }
+    } catch (e) {}
+}
+
 function buildWarningsEmbed() {
     let list = warnings_data.warnings_list || {};
     let totalWarned = Object.keys(list).length;
-    let desc = `📊 **إحصائيات الورنات:**\n\n**TOTAL WARNED MEMBERS : ${totalWarned}**\n\n👤 **الأعضاء الحاصلين على WARN:**\n\n`;
+    let desc = `📊 **إحصائيات الورنات:**\n\n**TOTAL WARNED MEMBERS : ${totalWarned}**\n\n👤 **الأعضاء الحاصلين على ورن:**\n\n`;
 
     if (totalWarned === 0) {
         desc += "لا يوجد أعضاء عليهم تحذيرات حالياً.";
     } else {
         for (let [userName, data] of Object.entries(list)) {
-            desc += `👤 **${userName}** : ⚠️ **WARN ${data.level}**\n`;
+            desc += `👤 **${userName}** : ⚠️ **ورن ${data.level}**\n`;
         }
     }
 
@@ -317,8 +402,8 @@ async function updateWarningsMessage() {
         if (!channel) return;
 
         let row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('btn_give_warn_main').setLabel('إعطاء ون ⚠️').setStyle(ButtonStyle.Success),
-            new ButtonBuilder().setCustomId('btn_remove_warn_main').setLabel('إزالة ون 🗑️').setStyle(ButtonStyle.Danger)
+            new ButtonBuilder().setCustomId('btn_give_warn_main').setLabel('إعطاء ورن ⚠️').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId('btn_remove_warn_main').setLabel('إزالة ورن 🗑️').setStyle(ButtonStyle.Danger)
         );
 
         if (msgId) {
@@ -401,7 +486,7 @@ function tabletsControlRows() {
         new ButtonBuilder().setCustomId('btn_tb_robbery_v20').setLabel('خدت TABLET ROBBERY').setStyle(ButtonStyle.Danger),
         new ButtonBuilder().setCustomId('btn_tb_chopshop_v20').setLabel('خدت TABLET CHOP SHOP 🟠').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('btn_tb_boosting_v20').setLabel('خدت LAPTOP Boosting').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_tb_house_v20').setLabel('خدت HOUSE TABLET').setStyle(ButtonStyle.Success)
+        new ButtonBuilder().setCustomId('btn_tb_house_v20').setLabel('HOUSE TABLET 🟢').setStyle(ButtonStyle.Success)
     );
     let row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('btn_tb_gangs_v20').setLabel('خدت TABLET GANGS ⚪').setStyle(ButtonStyle.Secondary),
@@ -412,7 +497,22 @@ function tabletsControlRows() {
     return [row1, row2];
 }
 
-// دالة لتحديث لوحة التابلت الرئيسية تلقائياً في الشات
+function taskControlRows() {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('submit_task_main_btn').setLabel('تم تسليم التاسك 📥').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('btn_task_add_member').setLabel('➕ إضافة عضو').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('btn_task_remove_member').setLabel('🗑️ إزالة عضو').setStyle(ButtonStyle.Danger)
+    );
+}
+
+function buildTaskPanelEmbed() {
+    return new EmbedBuilder()
+        .setTitle("📋 نظام التاسكات الجديد - TASKS SYSTEM")
+        .setDescription("إذا قمت بتسليم التاسك، اضغط على زر **تم تسليم التاسك 📥** أدناه لتحديد اسمك وإرسال الموارد للمراجعة.\n\n─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───\n\n👥 **الأعضاء المسجلين في القائمة:**\n" + MEMBERS_LIST.map(n => `• **${n}**`).join('\n'))
+        .setColor(0x2ECC71)
+        .setFooter({ text: "xXx TASKS SYSTEM", iconURL: client.user?.displayAvatarURL() });
+}
+
 async function updateTabletPanelMessage() {
     let tracker = loadTabletPanelTracker();
     if (!tracker.channel_id || !tracker.message_id) return;
@@ -422,6 +522,20 @@ async function updateTabletPanelMessage() {
             let msg = await channel.messages.fetch(tracker.message_id);
             if (msg) {
                 await msg.edit({ embeds: [buildTabletsLeaderboardEmbed()], components: tabletsControlRows() });
+            }
+        }
+    } catch (e) {}
+}
+
+async function updateTaskPanelMessage() {
+    let tracker = loadTaskPanelTracker();
+    if (!tracker.channel_id || !tracker.message_id) return;
+    try {
+        let channel = await client.channels.fetch(tracker.channel_id);
+        if (channel) {
+            let msg = await channel.messages.fetch(tracker.message_id);
+            if (msg) {
+                await msg.edit({ embeds: [buildTaskPanelEmbed()], components: [taskControlRows()] });
             }
         }
     } catch (e) {}
@@ -449,12 +563,12 @@ function showPanelRow() {
 
 function checkTabletPermissions(interaction) {
     let user = interaction.member;
-    let has_allowed_role = user && user.roles.cache.has(ALLOWED_ROLE_ID.toString());
+    let has_allowed_role = user && user.roles.cache.has(ALLOWED_ROLE_ID);
     let is_admin = user && user.permissions.has('Administrator');
     return has_allowed_role || is_admin;
 }
 
-function buildTaskEmbed() {
+function buildTaskLeaderboardEmbed() {
     let desc = "**📋 سجل تسليم التاسك والموارد:**\n\n";
     if (!db.resources || Object.keys(db.resources).length === 0) {
         desc += "لا يوجد تسليمات مسجلة حتى الآن.";
@@ -483,7 +597,7 @@ async function updateLeaderboardEmbeds() {
     if (!channel) return;
 
     try {
-        const embed = buildTaskEmbed();
+        const embed = buildTaskLeaderboardEmbed();
         if (db.task_message_id) {
             const msg = await channel.messages.fetch(db.task_message_id);
             await msg.edit({ embeds: [embed] });
@@ -493,7 +607,7 @@ async function updateLeaderboardEmbeds() {
             saveLeaderboardData();
         }
     } catch (e) {
-        const msg = await channel.send({ embeds: [buildTaskEmbed()] });
+        const msg = await channel.send({ embeds: [buildTaskLeaderboardEmbed()] });
         db.task_message_id = msg.id;
         saveLeaderboardData();
     }
@@ -521,21 +635,61 @@ client.once('ready', async () => {
     await updateWarningsMessage();
 });
 
+// مراقبة تعديل الرولات للأعضاء لإضافتهم أو إزالتهم تلقائياً من قائمة الأعضاء
+client.on('guildMemberUpdate', async (oldMember, newMember) => {
+    let hadRole = oldMember.roles.cache.has(ROLE_ID_1) || oldMember.roles.cache.has(ROLE_ID_2);
+    let hasRole = newMember.roles.cache.has(ROLE_ID_1) || newMember.roles.cache.has(ROLE_ID_2);
+    let memberName = newMember.displayName || newMember.user.username;
+
+    if (!hadRole && hasRole) {
+        if (!MEMBERS_LIST.includes(memberName)) {
+            MEMBERS_LIST.push(memberName);
+            tablets_data[memberName] = "❌ لا يوجد";
+            saveMembersList();
+            saveTabletsData();
+            await updateTabletPanelMessage();
+            await updateTaskPanelMessage();
+            await updateLiveShowMessage();
+        }
+    } else if (hadRole && !hasRole) {
+        MEMBERS_LIST = MEMBERS_LIST.filter(n => n !== memberName);
+        delete tablets_data[memberName];
+        saveMembersList();
+        saveTabletsData();
+        await updateTabletPanelMessage();
+        await updateTaskPanelMessage();
+        await updateLiveShowMessage();
+    }
+});
+
 // استقبال الأوامر بالشات
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
     const content = message.content.trim();
 
-    if (content === '!setup-task') {
-        const embed = new EmbedBuilder()
-            .setTitle("نظام التاسكات الجديد")
-            .setDescription("إذا سلمت التاسك، اضغط على الزر أدناه لملء البيانات المطلوبة.")
-            .setColor(0x2ECC71);
+    if (content.startsWith('!t')) {
+        let args = content.split(' ');
+        if (args.length > 1) {
+            let newTarget = parseInt(args[1]);
+            if (!isNaN(newTarget)) {
+                money_data.target_amount = newTarget;
+                saveMoneyData();
+                await message.reply(`✅ تم تحديث المبلغ الأساسي المطلوب إلى: \`${newTarget}\``);
+                try { await message.delete(); } catch(e) {}
+                return;
+            }
+        }
+    }
 
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('submit_task_main_btn').setLabel('تم 📥').setStyle(ButtonStyle.Success)
-        );
-        await message.channel.send({ embeds: [embed], components: [row] });
+    if (content === '!setup-money') {
+        let msg = await message.channel.send({ embeds: [buildMoneyEmbed()], components: [moneyControlRows()] });
+        saveMoneyTracker(message.channel.id, msg.id);
+        try { await message.delete(); } catch (e) {}
+    }
+
+    if (content === '!setup-task') {
+        let msg = await message.channel.send({ embeds: [buildTaskPanelEmbed()], components: [taskControlRows()] });
+        saveTaskPanelTracker(message.channel.id, msg.id);
         try { await message.delete(); } catch (e) {}
     }
 
@@ -597,15 +751,123 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton()) {
         const cid = interaction.customId;
 
-        if (cid === 'submit_task_main_btn') {
-            const modal = new ModalBuilder().setCustomId('task_delivery_modal').setTitle('تسليم التاسك');
+        if (cid === 'btn_money_add_payment') {
+            let modal = new ModalBuilder().setCustomId('money_add_modal').setTitle('تسجيل مبلغ مدفوع');
             modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('task_name').setLabel('الاسم :').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('task_resources').setLabel('الموارد :').setStyle(TextInputStyle.Paragraph).setRequired(false)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('task_money').setLabel('الفلوس :').setStyle(TextInputStyle.Short).setRequired(false)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('task_delivered_to').setLabel('سلمت لمين :').setStyle(TextInputStyle.Short).setRequired(true))
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('payer_name').setLabel('الاسم (مثال: بسيوني)').setStyle(TextInputStyle.Short).setRequired(true)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('payer_amount').setLabel('سلم كام (مثال: 10000)').setStyle(TextInputStyle.Short).setRequired(true))
             );
             await interaction.showModal(modal);
+            return;
+        }
+
+        if (cid === 'btn_money_remove_person') {
+            let payers = Object.keys(money_data.payments || {});
+            if (payers.length === 0) {
+                await interaction.reply({ content: "❌ لا توجد أي أسماء مسجلة في القائمة حالياً.", ephemeral: true });
+                return;
+            }
+            let options = payers.map(name => ({ label: name, value: name, emoji: '👤' })).slice(0, 25);
+            let select = new StringSelectMenuBuilder()
+                .setCustomId('money_remove_select_person')
+                .setPlaceholder('اختر الشخص لإزالته من القائمة...')
+                .addOptions(options);
+
+            await interaction.reply({ content: 'اختر الشخص المراد حذفه من سجل الفلوس:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
+            return;
+        }
+
+        if (cid === 'btn_give_warn_main') {
+            if (!checkTabletPermissions(interaction)) {
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن والرول المحدد فقط.", ephemeral: true });
+                return;
+            }
+            let guildMembers = await interaction.guild.members.fetch();
+            let eligibleMembers = MEMBERS_LIST.filter(memberName => {
+                let found = guildMembers.find(m => m.displayName.includes(memberName) || m.user.username.includes(memberName));
+                if (!found) return true;
+                return found.roles.cache.has(ROLE_ID_1) || found.roles.cache.has(ROLE_ID_2);
+            });
+
+            if (eligibleMembers.length === 0) {
+                await interaction.reply({ content: "❌ لا توجد أعضاء تحمل الرولات المطلوبة حالياً.", ephemeral: true });
+                return;
+            }
+
+            let options = eligibleMembers.map(name => ({ label: name, value: name, emoji: '👤' })).slice(0, 25);
+            let select = new StringSelectMenuBuilder()
+                .setCustomId('warn_select_member')
+                .setPlaceholder('اختر العضو لإعطائه ورن...')
+                .addOptions(options);
+
+            await interaction.reply({ content: 'اختر العضو المراد إعطاؤه ورن:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
+        }
+
+        if (cid === 'btn_remove_warn_main') {
+            if (!checkTabletPermissions(interaction)) {
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن والرول المحدد فقط.", ephemeral: true });
+                return;
+            }
+            let warnedKeys = Object.keys(warnings_data.warnings_list || {});
+            if (warnedKeys.length === 0) {
+                await interaction.reply({ content: "❌ لا توجد أي تحذيرات مسجلة حالياً لإزالتها.", ephemeral: true });
+                return;
+            }
+            let options = warnedKeys.map(name => ({ label: name, value: name, emoji: '👤' })).slice(0, 25);
+            let select = new StringSelectMenuBuilder()
+                .setCustomId('warn_remove_select')
+                .setPlaceholder('اختر العضو لإزالة الورن منه ومسح رسالته...')
+                .addOptions(options);
+
+            await interaction.reply({ content: 'اختر العضو لإزالة الورن عنه:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
+        }
+
+        if (cid === 'submit_task_main_btn') {
+            let options = MEMBERS_LIST.map(name => ({ label: name, value: name, emoji: '👤' })).slice(0, 25);
+            let select = new StringSelectMenuBuilder()
+                .setCustomId('task_select_member')
+                .setPlaceholder('اختر اسمك من القائمة لتسليم التاسك...')
+                .addOptions(options);
+
+            await interaction.reply({ content: 'اختر اسمك المعتمد لتسليم التاسك:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
+        }
+
+        if (cid === 'btn_task_add_member') {
+            if (!checkTabletPermissions(interaction)) {
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة فقط.", ephemeral: true });
+                return;
+            }
+            let modal = new ModalBuilder().setCustomId('task_modal_add_member').setTitle('إضافة عضو جديد لبوت التاسكات');
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('new_member_name').setLabel('اسم العضو الجديد :').setStyle(TextInputStyle.Short).setRequired(true))
+            );
+            await interaction.showModal(modal);
+        }
+
+        if (cid === 'btn_task_remove_member') {
+            if (!checkTabletPermissions(interaction)) {
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة فقط.", ephemeral: true });
+                return;
+            }
+            let guildMembers = await interaction.guild.members.fetch();
+            let eligibleMembers = MEMBERS_LIST.filter(memberName => {
+                let found = guildMembers.find(m => m.displayName.includes(memberName) || m.user.username.includes(memberName));
+                if (!found) return true;
+                return found.roles.cache.has(ROLE_ID_1) || found.roles.cache.has(ROLE_ID_2);
+            });
+
+            if (eligibleMembers.length === 0) {
+                await interaction.reply({ content: "❌ لا يوجد أعضاء مطابقين للرولات المحددة حالياً في القائمة.", ephemeral: true });
+                return;
+            }
+
+            let options = eligibleMembers.map(name => ({ label: name, value: name, emoji: '👤' })).slice(0, 25);
+            let select = new StringSelectMenuBuilder()
+                .setCustomId('task_select_remove_member')
+                .setPlaceholder('اختر العضو (الذي يحمل الرولات المطلوبة) لحذفه...')
+                .addOptions(options);
+
+            await interaction.reply({ content: 'اختر العضو لحذفه من قائمة التاسكات:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
         }
 
         if (cid === 'btn_main_vacation_app') {
@@ -626,40 +888,6 @@ client.on('interactionCreate', async (interaction) => {
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('weapon_details').setLabel('التفاصيل :').setStyle(TextInputStyle.Paragraph).setRequired(true))
             );
             await interaction.showModal(modal);
-        }
-
-        if (cid === 'btn_give_warn_main') {
-            if (!checkTabletPermissions(interaction)) {
-                await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة فقط.", ephemeral: true });
-                return;
-            }
-            let options = MEMBERS_LIST.map(name => ({ label: name, value: name, emoji: '👤' })).slice(0, 25);
-
-            let select = new StringSelectMenuBuilder()
-                .setCustomId('warn_select_member')
-                .setPlaceholder('اختر العضو لإعطائه ون...')
-                .addOptions(options);
-
-            await interaction.reply({ content: 'اختر العضو المراد إعطاؤه ون:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
-        }
-
-        if (cid === 'btn_remove_warn_main') {
-            if (!checkTabletPermissions(interaction)) {
-                await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة فقط.", ephemeral: true });
-                return;
-            }
-            let warnedKeys = Object.keys(warnings_data.warnings_list || {});
-            if (warnedKeys.length === 0) {
-                await interaction.reply({ content: "❌ لا توجد أي تحذيرات مسجلة حالياً لإزالتها.", ephemeral: true });
-                return;
-            }
-            let options = warnedKeys.map(name => ({ label: name, value: name, emoji: '👤' })).slice(0, 25);
-            let select = new StringSelectMenuBuilder()
-                .setCustomId('warn_remove_select')
-                .setPlaceholder('اختر العضو لإزالة الون منه...')
-                .addOptions(options);
-
-            await interaction.reply({ content: 'اختر العضو لإزالة الون عنه:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
         }
 
         if (cid === 'btn_storage_item') {
@@ -804,36 +1032,75 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isStringSelectMenu()) {
         let cid = interaction.customId;
 
+        // إزالة الورن ومسح رسالة السجل التفصيلية المرتبطة به
+        if (cid === 'warn_remove_select') {
+            let selectedName = interaction.values[0];
+            let warnObj = warnings_data.warnings_list[selectedName];
+
+            if (warnObj && warnObj.messageId) {
+                try {
+                    let ch = await client.channels.fetch(warnings_data.warn_channel_id || WARN_CHANNEL_ID);
+                    if (ch) {
+                        let msg = await ch.messages.fetch(warnObj.messageId);
+                        if (msg) await msg.delete();
+                    }
+                } catch (e) {}
+            }
+
+            delete warnings_data.warnings_list[selectedName];
+            saveWarningsData();
+            await updateWarningsMessage();
+            await interaction.update({ content: `🗑️ تم إزالة الورن عن العضو (${selectedName}) ومسح رسالته وتحديث اللوحة!`, components: [] });
+            return;
+        }
+
         if (cid === 'warn_select_member') {
             let selectedName = interaction.values[0];
             let selectLevel = new StringSelectMenuBuilder()
                 .setCustomId(`warn_level_select_${selectedName}`)
-                .setPlaceholder('اختر مستوى الون...')
+                .setPlaceholder('اختر مستوى الورن...')
                 .addOptions([
-                    { label: 'WARN 1 (يستمر لمدة 10 أيام)', value: '1', emoji: '⚠️' },
-                    { label: 'WARN 2 (يستمر لمدة 15 يوم)', value: '2', emoji: '⚠️' },
-                    { label: 'WARN 3 (دائم طول الوقت)', value: '3', emoji: '🚨' }
+                    { label: 'ورن 1 (يستمر لمدة 10 أيام)', value: '1', emoji: '⚠️' },
+                    { label: 'ورن 2 (يستمر لمدة 15 يوم)', value: '2', emoji: '⚠️' },
+                    { label: 'ورن 3 (دائم طول الوقت)', value: '3', emoji: '🚨' }
                 ]);
-            await interaction.update({ content: `اختر مستوى الون لـ (${selectedName}):`, components: [new ActionRowBuilder().addComponents(selectLevel)] });
+            await interaction.update({ content: `اختر مستوى الورن لـ (${selectedName}):`, components: [new ActionRowBuilder().addComponents(selectLevel)] });
         }
 
         if (cid.startsWith('warn_level_select_')) {
             let selectedName = cid.replace('warn_level_select_', '');
             let level = interaction.values[0];
             
-            let modal = new ModalBuilder().setCustomId(`warn_modal_${selectedName}_${level}`).setTitle(`سبب الون مستوى ${level}`);
+            let modal = new ModalBuilder().setCustomId(`warn_modal_${selectedName}_${level}`).setTitle(`سبب الورن مستوى ${level}`);
             modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('warn_reason').setLabel('سبب الون :').setStyle(TextInputStyle.Paragraph).setRequired(true))
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('warn_reason').setLabel('سبب الورن :').setStyle(TextInputStyle.Paragraph).setRequired(true))
             );
             await interaction.showModal(modal);
         }
 
-        if (cid === 'warn_remove_select') {
+        if (cid === 'money_remove_select_person') {
+            let personToRemove = interaction.values[0];
+            delete money_data.payments[personToRemove];
+            saveMoneyData();
+            await interaction.update({ content: `🗑️ تم إزالة الشخص (**${personToRemove}**) وتحديث لوحة الميزانية بنجاح!`, components: [] });
+            return;
+        }
+
+        if (cid === 'task_select_member') {
             let selectedName = interaction.values[0];
-            delete warnings_data.warnings_list[selectedName];
-            saveWarningsData();
-            await updateWarningsMessage();
-            await interaction.update({ content: `🗑️ تم إزالة الون عن العضو (${selectedName}) بنجاح وتحديث اللوحة!`, components: [] });
+            let modal = new ModalBuilder().setCustomId(`task_delivery_modal_${selectedName}`).setTitle(`تسليم التاسك لـ ${selectedName}`);
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('task_resources').setLabel('الموارد المسلمة :').setStyle(TextInputStyle.Paragraph).setRequired(true))
+            );
+            await interaction.update({ content: `✅ تم اختيار العضو (**${selectedName}**)، يرجى إكمال نموذج الموارد:`, components: [] });
+        }
+
+        if (cid === 'task_select_remove_member') {
+            let memberToRemove = interaction.values[0];
+            MEMBERS_LIST = MEMBERS_LIST.filter(n => n !== memberToRemove);
+            saveMembersList();
+            await updateTaskPanelMessage();
+            await interaction.update({ content: `🗑️ تم إزالة العضو (**${memberToRemove}**) من قائمة التاسكات وتحديث اللوحة بنجاح!`, components: [] });
         }
 
         if (cid === 'select_remove_member') {
@@ -959,7 +1226,6 @@ client.on('interactionCreate', async (interaction) => {
             tablets_data[selected_name] = items_list.length > 0 ? items_list.join(" - ") : "❌ لا يوجد";
             saveTabletsData();
 
-            // تحديث لوحة التابلت الأساسية وشاشة العرض تلقائياً فوراً
             await updateTabletPanelMessage();
             await updateLiveShowMessage();
 
@@ -968,18 +1234,70 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (interaction.isModalSubmit()) {
-        if (interaction.customId === 'task_delivery_modal') {
-            const name = interaction.fields.getTextInputValue('task_name');
-            const resources = interaction.fields.getTextInputValue('task_resources') || 'لا يوجد';
-            const money = interaction.fields.getTextInputValue('task_money') || 'لا يوجد';
-            const deliveredTo = interaction.fields.getTextInputValue('task_delivered_to');
+        // معالجة إعطاء الورن وإرسال رسالة السجل التفصيلية فقط
+        if (interaction.customId.startsWith('warn_modal_')) {
+            let parts = interaction.customId.split('_');
+            let level = parts[parts.length - 1];
+            let targetName = parts.slice(2, parts.length - 1).join('_');
+            let reason = interaction.fields.getTextInputValue('warn_reason');
 
-            await interaction.reply({ content: "✅ تم إرسال إثبات تسليم التاسك للإدارة بنجاح!", ephemeral: true });
+            let logChannel = interaction.guild.channels.cache.get(WARN_CHANNEL_ID) || interaction.channel;
+            let logEmbed = new EmbedBuilder()
+                .setTitle(`ورن ${level} ⚠️`)
+                .setDescription(`👤 **العضو:** ${targetName}\n👑 **بواسطة:** ${interaction.user}\n💬 **السبب:** ${reason}\n⏰ **الوقت:** ${new Date().toLocaleTimeString()} (${new Date().toLocaleDateString()})\n⏳ **المدة:** ${level === '1' ? '10 أيام' : level === '2' ? '15 يوم' : 'دائم (طوال الوقت)'}`)
+                .setColor(0xE74C3C);
+            
+            let sentMsg = await logChannel.send({ embeds: [logEmbed] });
+
+            warnings_data.warnings_list[targetName] = { level: level, messageId: sentMsg.id };
+            saveWarningsData();
+            await updateWarningsMessage();
+
+            await interaction.reply({ content: `⚠️ تم إعطاء ورن مستوى (${level}) لـ (${targetName}) بنجاح!`, ephemeral: true });
+
+            if (level === '1') {
+                setTimeout(async () => {
+                    try { await sentMsg.delete(); } catch(e) {}
+                    if (warnings_data.warnings_list[targetName]?.level === '1') {
+                        delete warnings_data.warnings_list[targetName];
+                        saveWarningsData();
+                        await updateWarningsMessage();
+                    }
+                }, 10 * 24 * 60 * 60 * 1000);
+            } else if (level === '2') {
+                setTimeout(async () => {
+                    try { await sentMsg.delete(); } catch(e) {}
+                    if (warnings_data.warnings_list[targetName]?.level === '2') {
+                        delete warnings_data.warnings_list[targetName];
+                        saveWarningsData();
+                        await updateWarningsMessage();
+                    }
+                }, 15 * 24 * 60 * 60 * 1000);
+            }
+            return;
+        }
+
+        if (interaction.customId === 'money_add_modal') {
+            let payerName = interaction.fields.getTextInputValue('payer_name').trim();
+            let amount = parseInt(interaction.fields.getTextInputValue('payer_amount')) || 0;
+
+            money_data.payments[payerName] = (money_data.payments[payerName] || 0) + amount;
+            saveMoneyData();
+
+            await interaction.reply({ content: `✅ تم تسجيل مبلغ (\`${amount}\`) لـ (**${payerName}**) بنجاح وتحديث لوحة الميزانية!`, ephemeral: true });
+            return;
+        }
+
+        if (interaction.customId.startsWith('task_delivery_modal_')) {
+            const memberName = interaction.customId.replace('task_delivery_modal_', '');
+            const resources = interaction.fields.getTextInputValue('task_resources') || 'لا يوجد';
+
+            await interaction.reply({ content: `✅ تم إرسال إثبات تسليم التاسك لـ (${memberName}) للإدارة بنجاح!`, ephemeral: true });
 
             const logChannel = interaction.guild.channels.cache.get(TASK_LOG_CHANNEL_ID) || interaction.channel;
             const embed = new EmbedBuilder()
-                .setTitle("📥 إثبات تسليم جديد تحت المراجعة")
-                .setDescription(`--- • ° ☆ : . ☽ . : ☆ ° . ---\n\n👤 **معلومات العضو:**\n• **الاسم:** ${name}\n• **ID:** \`${interaction.user.id}\`\n\n--- • ° ☆ : . ☽ . : ☆ ° . ---\n\n🎒 **الموارد:** \`${resources}\`\n💰 **الفلوس:** \`${money}\`\n🤝 **سلمت لمين:** \`${deliveredTo}\`\n\n--- • ° ☆ : . ☽ . : ☆ ° . ---\n\n⏰ **وقت التسليم:** ${new Date().toLocaleTimeString()} (بتاريخ ${new Date().toLocaleDateString()})`)
+                .setTitle("📥 إثبات تسليم تاسك جديد تحت المراجعة")
+                .setDescription(`--- • ° ☆ : . ☽ . : ☆ ° . ---\n\n👤 **العضو المُسَلِّم:** ${memberName}\n🆔 **ID صاحب التفاعل:** \`${interaction.user.id}\`\n\n--- • ° ☆ : . ☽ . : ☆ ° . ---\n\n🎒 **الموارد المسلمة:** \`${resources}\`\n\n--- • ° ☆ : . ☽ . : ☆ ° . ---\n\n⏰ **وقت التسليم:** ${new Date().toLocaleTimeString()} (${new Date().toLocaleDateString()})`)
                 .setColor(0xF1C40F)
                 .setThumbnail(interaction.user.displayAvatarURL());
 
@@ -988,7 +1306,37 @@ client.on('interactionCreate', async (interaction) => {
                 new ButtonBuilder().setCustomId('reject_task_btn').setLabel('لا لم يسلم التاسك').setStyle(ButtonStyle.Danger)
             );
 
-            await logChannel.send({ content: `📢 **إثبات تسليم من ${interaction.user} يتطلب مراجعة الإدارة:**`, embeds: [embed], components: [adminRow] });
+            await logChannel.send({ content: `📢 **إثبات تسليم من العضو (${memberName}) يتطلب مراجعة الإدارة:**`, embeds: [embed], components: [adminRow] });
+            return;
+        }
+
+        if (interaction.customId === 'task_modal_add_member') {
+            let newName = interaction.fields.getTextInputValue('new_member_name').trim();
+            if (newName && !MEMBERS_LIST.includes(newName)) {
+                MEMBERS_LIST.push(newName);
+                saveMembersList();
+                await updateTaskPanelMessage();
+                await interaction.reply({ content: `✅ تم إضافة العضو (**${newName}**) لقائمة التاسكات بنجاح!`, ephemeral: true });
+            } else {
+                await interaction.reply({ content: `❌ هذا الاسم موجود مسبقاً أو فارغ!`, ephemeral: true });
+            }
+        }
+
+        if (interaction.customId === 'weapon_give_modal' || interaction.customId === 'weapon_receive_modal') {
+            const isGive = interaction.customId === 'weapon_give_modal';
+            const target = interaction.fields.getTextInputValue('weapon_target');
+            const details = interaction.fields.getTextInputValue('weapon_details');
+
+            await interaction.reply({ content: `✅ تم تسجيل عملية (${isGive ? 'تسليم' : 'استلام'} سلاح) لـ (${target}) بنجاح!`, ephemeral: true });
+
+            const embed = new EmbedBuilder()
+                .setTitle(isGive ? "📤 تسليم سلاح جديد" : "📥 استلام سلاح جديد")
+                .setDescription(`👤 **بواسطة:** ${interaction.user}\n🎯 **الشخص:** ${target}\n📝 **التفاصيل:**\n\`\`\`text\n${details}\n\`\`\`\n⏰ **الوقت:** ${new Date().toLocaleTimeString()} (${new Date().toLocaleDateString()})`)
+                .setColor(isGive ? 0x2ECC71 : 0xE74C3C)
+                .setTimestamp();
+
+            await interaction.channel.send({ embeds: [embed] });
+            return;
         }
 
         if (interaction.customId === 'vacation_modal') {
@@ -1013,47 +1361,6 @@ client.on('interactionCreate', async (interaction) => {
             await logChannel.send({ content: `📣 **طلب إجازة جديد من ${interaction.user}:**`, embeds: [embed], components: [adminRow] });
         }
 
-        if (interaction.customId.startsWith('warn_modal_')) {
-            let parts = interaction.customId.split('_');
-            let level = parts[parts.length - 1];
-            let targetName = parts.slice(2, parts.length - 1).join('_');
-            let reason = interaction.fields.getTextInputValue('warn_reason');
-
-            warnings_data.warnings_list[targetName] = { level: level };
-            saveWarningsData();
-            await updateWarningsMessage();
-
-            await interaction.reply({ content: `⚠️ تم إعطاء ون مستوى (${level}) لـ (${targetName}) بنجاح!`, ephemeral: true });
-
-            let logChannel = interaction.guild.channels.cache.get(WARN_CHANNEL_ID) || interaction.channel;
-            let logEmbed = new EmbedBuilder()
-                .setTitle(`WARN ${level} ⚠️`)
-                .setDescription(`👤 **العضو:** ${targetName}\n👑 **بواسطة:** ${interaction.user}\n💬 **السبب:** ${reason}\n⏰ **الوقت:** ${new Date().toLocaleTimeString()} (${new Date().toLocaleDateString()})\n⏳ **المدة:** ${level === '1' ? '10 أيام' : level === '2' ? '15 يوم' : 'دائم (طوال الوقت)'}`)
-                .setColor(0xE74C3C);
-            
-            let sentMsg = await logChannel.send({ embeds: [logEmbed] });
-
-            if (level === '1') {
-                setTimeout(async () => {
-                    try { await sentMsg.delete(); } catch(e) {}
-                    if (warnings_data.warnings_list[targetName]?.level === '1') {
-                        delete warnings_data.warnings_list[targetName];
-                        saveWarningsData();
-                        await updateWarningsMessage();
-                    }
-                }, 10 * 24 * 60 * 60 * 1000);
-            } else if (level === '2') {
-                setTimeout(async () => {
-                    try { await sentMsg.delete(); } catch(e) {}
-                    if (warnings_data.warnings_list[targetName]?.level === '2') {
-                        delete warnings_data.warnings_list[targetName];
-                        saveWarningsData();
-                        await updateWarningsMessage();
-                    }
-                }, 15 * 24 * 60 * 60 * 1000);
-            }
-        }
-
         if (interaction.customId === 'modal_add_member') {
             let newName = interaction.fields.getTextInputValue('new_member_name').trim();
             if (newName && !MEMBERS_LIST.includes(newName)) {
@@ -1062,7 +1369,6 @@ client.on('interactionCreate', async (interaction) => {
                 saveMembersList();
                 saveTabletsData();
 
-                // تحديث اللوحات تلقائياً
                 await updateTabletPanelMessage();
                 await updateLiveShowMessage();
 
