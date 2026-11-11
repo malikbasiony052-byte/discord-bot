@@ -70,11 +70,15 @@ const client = new Client({
     ]
 });
 
-// المعرفات والثوابت المشتركة
+// المعرفات والثوابت المحددة حسب طلبك
 const VACATION_LOG_CHANNEL_ID = "1552576612648624148";
 const LEADERBOARD_CHANNEL_ID = "1563202261281144952";
-const WARN_CHANNEL_ID = "1534996020092600433";
-const ALLOWED_ROLE_ID = "1283928161805140022"; // الرتبة المحددة فقط
+const WARN_CHANNEL_ID = "1534996020092600433"; // روم إعطاء الورن للإدارة والأدمن
+const WARN_REQUEST_CHANNEL_ID = "1557330614141587586"; // روم طلبات الورن من الناس
+const WEAPONS_CHANNEL_ID = "1561472930670452866"; // روم بوت الأسلحة
+const ALLOWED_ROLE_ID = "1283928161805140022"; // رتبة الأدمن Structure
+const WEAPON_SPECIAL_ROLE_ID = "1561471985135910932"; // الرتبة الجديدة المخصصة للأسلحة
+const SPECIAL_USER_ID = "1343942987154984974"; // آي دي الشخص المخصص (el_shater)
 
 // الرولات المطلوبة للأعضاء (الربط التلقائي)
 const ROLE_ID_1 = "1552642469789831168";
@@ -582,12 +586,25 @@ function showPanelRow() {
     );
 }
 
-// دقة فحص الصلاحيات الموحدة: الأدمن أو الرتبة المحددة فقط
+// دالة فحص الصلاحيات العامة
 function checkTabletPermissions(interaction) {
     let user = interaction.member;
-    let has_allowed_role = user && user.roles.cache.has(ALLOWED_ROLE_ID);
-    let is_admin = user && user.permissions.has('Administrator');
-    return has_allowed_role || is_admin;
+    if (!user) return false;
+    let has_allowed_role = user.roles.cache.has(ALLOWED_ROLE_ID);
+    let is_admin = user.permissions.has('Administrator');
+    let is_special_user = user.id === SPECIAL_USER_ID;
+    return has_allowed_role || is_admin || is_special_user;
+}
+
+// دالة فحص صلاحيات الأسلحة (تشمل الرتبة الجديدة 1561471985135910932)
+function checkWeaponPermissions(interaction) {
+    let user = interaction.member;
+    if (!user) return false;
+    let has_allowed_role = user.roles.cache.has(ALLOWED_ROLE_ID);
+    let has_weapon_role = user.roles.cache.has(WEAPON_SPECIAL_ROLE_ID);
+    let is_admin = user.permissions.has('Administrator');
+    let is_special_user = user.id === SPECIAL_USER_ID;
+    return has_allowed_role || has_weapon_role || is_admin || is_special_user;
 }
 
 function buildTaskLeaderboardEmbed() {
@@ -775,10 +792,9 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton()) {
         const cid = interaction.customId;
 
-        // حصر أزرار الفلوس للأدمن والرتبة المحددة فقط
         if (cid === 'btn_money_add_payment' || cid === 'btn_money_remove_person') {
             if (!checkTabletPermissions(interaction)) {
-                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة والأدمن فقط.", ephemeral: true });
                 return;
             }
             if (cid === 'btn_money_add_payment') {
@@ -809,7 +825,7 @@ client.on('interactionCreate', async (interaction) => {
 
         if (cid === 'btn_give_warn_main') {
             if (!checkTabletPermissions(interaction)) {
-                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة والأدمن فقط.", ephemeral: true });
                 return;
             }
             let guildMembers = await interaction.guild.members.fetch();
@@ -835,7 +851,7 @@ client.on('interactionCreate', async (interaction) => {
 
         if (cid === 'btn_remove_warn_main') {
             if (!checkTabletPermissions(interaction)) {
-                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة والأدمن فقط.", ephemeral: true });
                 return;
             }
             let warnedKeys = Object.keys(warnings_data.warnings_list || {});
@@ -852,10 +868,9 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.reply({ content: 'اختر العضو لإزالة الورن عنه:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
         }
 
-        // حصر أزرار التاسكات للإدارة فقط
         if (cid === 'submit_task_main_btn' || cid === 'btn_task_add_member' || cid === 'btn_task_remove_member') {
             if (!checkTabletPermissions(interaction)) {
-                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة والأدمن فقط.", ephemeral: true });
                 return;
             }
             if (cid === 'submit_task_main_btn') {
@@ -910,7 +925,12 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.showModal(modal);
         }
 
+        // أزرار نظام الأسلحة (باستخدام صلاحيات الأسلحة الجديدة)
         if (cid === 'persistent_btn_receive_v9' || cid === 'persistent_btn_give_v9') {
+            if (!checkWeaponPermissions(interaction)) {
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن، الرتبة المحددة، والشخص المخصص فقط.", ephemeral: true });
+                return;
+            }
             const isGive = cid === 'persistent_btn_give_v9';
             const modal = new ModalBuilder().setCustomId(isGive ? 'weapon_give_modal' : 'weapon_receive_modal').setTitle(isGive ? 'سلمت سلاح' : 'استلمت سلاح');
             modal.addComponents(
@@ -918,11 +938,12 @@ client.on('interactionCreate', async (interaction) => {
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('weapon_details').setLabel('التفاصيل :').setStyle(TextInputStyle.Paragraph).setRequired(true))
             );
             await interaction.showModal(modal);
+            return;
         }
 
         if (cid === 'btn_storage_item') {
             if (!checkTabletPermissions(interaction)) {
-                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة والأدمن فقط.", ephemeral: true });
                 return;
             }
             let select = new StringSelectMenuBuilder()
@@ -937,7 +958,7 @@ client.on('interactionCreate', async (interaction) => {
 
         if (cid === 'btn_storage_invoice') {
             if (!checkTabletPermissions(interaction)) {
-                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة والأدمن فقط.", ephemeral: true });
                 return;
             }
             let select = new StringSelectMenuBuilder()
@@ -952,7 +973,7 @@ client.on('interactionCreate', async (interaction) => {
 
         if (cid === 'btn_approve_vacation' || cid === 'btn_reject_vacation') {
             if (!checkTabletPermissions(interaction)) {
-                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة والأدمن فقط.", ephemeral: true });
                 return;
             }
             const isApprove = cid === 'btn_approve_vacation';
@@ -974,7 +995,7 @@ client.on('interactionCreate', async (interaction) => {
 
         if (cid === 'btn_show_change_modal_v2') {
             if (!checkTabletPermissions(interaction)) {
-                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة والأدمن فقط.", ephemeral: true });
                 return;
             }
             let modal = new ModalBuilder().setCustomId('change_stock_modal_custom').setTitle('تقديم طلب تغيير');
@@ -990,7 +1011,7 @@ client.on('interactionCreate', async (interaction) => {
 
         if (cid === 'btn_add_member') {
             if (!checkTabletPermissions(interaction)) {
-                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة والأدمن فقط.", ephemeral: true });
                 return;
             }
             let modal = new ModalBuilder().setCustomId('modal_add_member').setTitle('إضافة عضو جديد للقائمة');
@@ -1002,7 +1023,7 @@ client.on('interactionCreate', async (interaction) => {
 
         if (cid === 'btn_remove_member') {
             if (!checkTabletPermissions(interaction)) {
-                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة والأدمن فقط.", ephemeral: true });
                 return;
             }
             let options = MEMBERS_LIST.map(name => ({ label: name, value: name, emoji: '👤' })).slice(0, 25);
@@ -1024,7 +1045,7 @@ client.on('interactionCreate', async (interaction) => {
 
         if (tabletMap[cid]) {
             if (!checkTabletPermissions(interaction)) {
-                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة والأدمن فقط.", ephemeral: true });
                 return;
             }
             let [tName, tEmoji] = tabletMap[cid];
@@ -1042,7 +1063,7 @@ client.on('interactionCreate', async (interaction) => {
 
         if (cid === 'btn_tb_reset_v20') {
             if (!checkTabletPermissions(interaction)) {
-                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة والأدمن فقط.", ephemeral: true });
                 return;
             }
             for (let name of MEMBERS_LIST) tablets_data[name] = "❌ لا يوجد";
@@ -1058,7 +1079,7 @@ client.on('interactionCreate', async (interaction) => {
 
         if (cid === 'task_select_member') {
             if (!checkTabletPermissions(interaction)) {
-                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن ورتبة الإدارة فقط.", ephemeral: true });
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للإدارة والأدمن فقط.", ephemeral: true });
                 return;
             }
             let selectedName = interaction.values[0];
@@ -1361,7 +1382,8 @@ client.on('interactionCreate', async (interaction) => {
                 .setColor(isGive ? 0x2ECC71 : 0xE74C3C)
                 .setTimestamp();
 
-            await interaction.channel.send({ embeds: [embed] });
+            const weaponsLogChannel = interaction.guild.channels.cache.get(WEAPONS_CHANNEL_ID) || interaction.channel;
+            await weaponsLogChannel.send({ embeds: [embed] });
             return;
         }
 
