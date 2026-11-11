@@ -71,12 +71,12 @@ const client = new Client({
     ]
 });
 
-// المعرفات والثوابت المحددة حسب طلبك الدقيق
+// المعرفات والثوابت المحددة حسب طلبك
 const VACATION_LOG_CHANNEL_ID = "1552576612648624148";
-const LEADERBOARD_CHANNEL_ID = "1563202261281144952"; // روم الليدر بورد الشامل
-const WARN_PANEL_CHANNEL_ID = "1534996020092600433"; // روم لوحة التحكم والورنات الإجمالية
-const WARN_LOG_CHANNEL_ID = "1557330614141587586"; // روم إرسال رسالة الورن الفردية للشخص
-const WEAPONS_CHANNEL_ID = "1561472930670452866"; // روم بوت الأسلحة
+const LEADERBOARD_CHANNEL_ID = "1563202261281144952"; 
+const WARN_PANEL_CHANNEL_ID = "1534996020092600433"; 
+const WARN_LOG_CHANNEL_ID = "1557330614141587586"; 
+const WEAPONS_CHANNEL_ID = "1561472930670452866"; // روم لوحة الأسلحة الرئيسية
 const ALLOWED_ROLE_ID = "1283928161805140022"; // رتبة الأدمن Structure
 const WEAPON_SPECIAL_ROLE_ID = "1561471985135910932"; // رتبة الأسلحة المخصصة
 const SPECIAL_USER_ID = "1343942987154984974"; // آي دي الشخص المخصص (el_shater)
@@ -100,6 +100,7 @@ const STORAGE_FILE = "storage_data.json";
 const STORAGE_INVOICES_FILE = "storage_invoices.json";
 const STORAGE_MSG_TRACKER = "storage_msg_tracker.json";
 const TASK_RESOURCES_FILE = "task_resources_data.json";
+const WEAPONS_DATA_FILE = "weapons_system_data.json"; // ملف تخزين سجلات الأسلحة
 
 // قائمة الأعضاء الافتراضية
 const DEFAULT_MEMBERS = [
@@ -125,6 +126,70 @@ function saveMembersList() {
 }
 
 let MEMBERS_LIST = loadMembersList();
+
+// نظام بيانات الأسلحة (سجل العمليات والـ Tracker)
+let weapons_data = { "records": [], "tracker": { channel_id: null, message_id: null } };
+if (fs.existsSync(WEAPONS_DATA_FILE)) {
+    try {
+        const loadedWep = JSON.parse(fs.readFileSync(WEAPONS_DATA_FILE, 'utf8'));
+        if (typeof loadedWep === 'object') Object.assign(weapons_data, loadedWep);
+    } catch (e) {}
+}
+function saveWeaponsData() {
+    fs.writeFileSync(WEAPONS_DATA_FILE, JSON.stringify(weapons_data, null, 2), 'utf8');
+    updateWeaponsLivePanel();
+}
+
+// بناء لوحة الأسلحة الكبيرة (Embed)
+function buildWeaponsEmbed() {
+    let records = weapons_data.records || [];
+    let desc = "### 🔫 سجل العمليات الحالية للأسلحة (تسليم واستلام):\n\n";
+
+    if (records.length === 0) {
+        desc += "لا توجد أي عمليات أسلحة مسجلة حتى الآن.";
+    } else {
+        // عرض آخر العمليات مرتبة
+        for (let i = records.length - 1; i >= 0; i--) {
+            let r = records[i];
+            let emoji = r.type === 'give' ? '📤' : '📥';
+            let typeText = r.type === 'give' ? 'تسليم سلاح' : 'استلام سلاح';
+            desc += `${emoji} **${typeText}**\n`;
+            desc += `• **بواسطة:** <@${r.authorId}>\n`;
+            desc += `• **الشخص:** ${r.target}\n`;
+            desc += `• **التفاصيل:** \`${r.details}\`\n`;
+            desc += `• **الوقت:** ${r.time}\n`;
+            desc += "─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───\n";
+        }
+    }
+
+    return new EmbedBuilder()
+        .setTitle("🛡️ نظام الأسلحة الموحد - WEAPONS SYSTEM")
+        .setDescription(desc)
+        .setColor(0x2ECC71)
+        .setFooter({ text: "xXx WEAPONS SYSTEM", iconURL: client.user?.displayAvatarURL() });
+}
+
+function weaponsControlRows() {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('persistent_btn_receive_v9').setLabel('استلمت سلاح 📥').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('persistent_btn_give_v9').setLabel('سلمت سلاح 📤').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('btn_clear_weapons_records').setLabel('تصفير السجل 🗑️').setStyle(ButtonStyle.Secondary)
+    );
+}
+
+async function updateWeaponsLivePanel() {
+    let tracker = weapons_data.tracker;
+    if (!tracker || !tracker.channel_id || !tracker.message_id) return;
+    try {
+        let channel = await client.channels.fetch(tracker.channel_id);
+        if (channel) {
+            let msg = await channel.messages.fetch(tracker.message_id);
+            if (msg) {
+                await msg.edit({ embeds: [buildWeaponsEmbed()], components: [weaponsControlRows()] });
+            }
+        }
+    } catch (e) {}
+}
 
 // نظام موارد التاسكات المعتمدة لكل شخص
 let task_resources_data = {};
@@ -410,7 +475,7 @@ function buildWarningsEmbed() {
 }
 
 async function updateWarningsMessage() {
-    let channelId = WARN_PANEL_CHANNEL_ID; // روم لوحة الورنات الأساسية ثابت في 1534996020092600433
+    let channelId = WARN_PANEL_CHANNEL_ID;
     let msgId = warnings_data.warn_msg_id;
     if (!channelId) return;
 
@@ -605,7 +670,7 @@ function checkWeaponPermissions(interaction) {
     return has_allowed_role || has_weapon_role || is_admin || is_special_user;
 }
 
-// دالة تنسيق الوقت (من ثواني إلى أيام، ساعات، دقائق)
+// دالة تنسيق الوقت
 function formatVoiceTime(totalSeconds) {
     let days = Math.floor(totalSeconds / (3600 * 24));
     let hours = Math.floor((totalSeconds % (3600 * 24)) / 3600);
@@ -618,7 +683,6 @@ function formatVoiceTime(totalSeconds) {
     return parts.join(' ');
 }
 
-// بناء لوحة ليدر بورد الفويس
 function buildVoiceLeaderboardEmbed() {
     let voiceTimeMap = db.voiceTime || {};
     let sortedUsers = Object.entries(voiceTimeMap).sort((a, b) => b[1] - a[1]);
@@ -865,16 +929,9 @@ client.on('messageCreate', async (message) => {
     }
 
     if (content === '!setup-weapons') {
-        const embed = new EmbedBuilder()
-            .setTitle("WEAPONS SYSTEM")
-            .setDescription("نظام السلاح\nإذا أعطيت أو استلمت سلاح اضغط على الأزرار بالأسفل.")
-            .setColor(0x2ECC71);
-
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('persistent_btn_receive_v9').setLabel('استلمت سلاح').setStyle(ButtonStyle.Danger),
-            new ButtonBuilder().setCustomId('persistent_btn_give_v9').setLabel('سلمت سلاح').setStyle(ButtonStyle.Success)
-        );
-        await message.channel.send({ embeds: [embed], components: [row] });
+        let msg = await message.channel.send({ embeds: [buildWeaponsEmbed()], components: [weaponsControlRows()] });
+        weapons_data.tracker = { channel_id: message.channel.id, message_id: msg.id };
+        saveWeaponsData();
         try { await message.delete(); } catch (e) {}
     }
 
@@ -908,6 +965,17 @@ client.on('messageCreate', async (message) => {
 client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton()) {
         const cid = interaction.customId;
+
+        if (cid === 'btn_clear_weapons_records') {
+            if (!checkWeaponPermissions(interaction)) {
+                await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن، الرتبة المحددة، والشخص المخصص فقط.", ephemeral: true });
+                return;
+            }
+            weapons_data.records = [];
+            saveWeaponsData();
+            await interaction.reply({ content: "🔄 تم تصفير سجل الأسلحة بنجاح!", ephemeral: true });
+            return;
+        }
 
         if (cid === 'btn_money_add_payment' || cid === 'btn_money_remove_person') {
             if (!checkTabletPermissions(interaction)) {
@@ -1042,16 +1110,17 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.showModal(modal);
         }
 
+        // أزرار لوحة الأسلحة (تسجيل العملية وتحديث اللوحة مباشر)
         if (cid === 'persistent_btn_receive_v9' || cid === 'persistent_btn_give_v9') {
             if (!checkWeaponPermissions(interaction)) {
                 await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن، الرتبة المحددة، والشخص المخصص فقط.", ephemeral: true });
                 return;
             }
             const isGive = cid === 'persistent_btn_give_v9';
-            const modal = new ModalBuilder().setCustomId(isGive ? 'weapon_give_modal' : 'weapon_receive_modal').setTitle(isGive ? 'سلمت سلاح' : 'استلمت سلاح');
+            const modal = new ModalBuilder().setCustomId(isGive ? 'weapon_give_modal' : 'weapon_receive_modal').setTitle(isGive ? 'تسليم سلاح' : 'استلام سلاح');
             modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('weapon_target').setLabel('الشخص (منشن أو اسمه):').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('weapon_details').setLabel('التفاصيل :').setStyle(TextInputStyle.Paragraph).setRequired(true))
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('weapon_target').setLabel('الشخص (اسم أو منشن):').setStyle(TextInputStyle.Short).setRequired(true)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('weapon_details').setLabel('التفاصيل (اسم السلاح):').setStyle(TextInputStyle.Paragraph).setRequired(true))
             );
             await interaction.showModal(modal);
             return;
@@ -1213,7 +1282,6 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
-        // إزالة الورن وحذف رسالته تلقائياً من الروم المخصص 1557330614141587586
         if (cid === 'warn_remove_select') {
             let selectedName = interaction.values[0];
             let warnObj = warnings_data.warnings_list[selectedName];
@@ -1430,7 +1498,6 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
-        // إرسال رسالة الورن الفردية حصرياً في الروم المخصص 1557330614141587586
         if (interaction.customId.startsWith('warn_modal_')) {
             let parts = interaction.customId.split('_');
             let level = parts[parts.length - 1];
@@ -1500,21 +1567,24 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
+        // تسجيل تسليم أو استلام السلاح وإضافته للوحة الرئيسية وتحديثها فورا
         if (interaction.customId === 'weapon_give_modal' || interaction.customId === 'weapon_receive_modal') {
             const isGive = interaction.customId === 'weapon_give_modal';
             const target = interaction.fields.getTextInputValue('weapon_target');
             const details = interaction.fields.getTextInputValue('weapon_details');
 
-            await interaction.reply({ content: `✅ تم تسجيل عملية (${isGive ? 'تسليم' : 'استلام'} سلاح) لـ (${target}) بنجاح!`, ephemeral: true });
+            let recordEntry = {
+                type: isGive ? 'give' : 'receive',
+                authorId: interaction.user.id,
+                target: target,
+                details: details,
+                time: `${new Date().toLocaleTimeString()} (${new Date().toLocaleDateString()})`
+            };
 
-            const embed = new EmbedBuilder()
-                .setTitle(isGive ? "📤 تسليم سلاح جديد" : "📥 استلام سلاح جديد")
-                .setDescription(`👤 **بواسطة:** ${interaction.user}\n🎯 **الشخص:** ${target}\n📝 **التفاصيل:**\n\`\`\`text\n${details}\n\`\`\`\n⏰ **الوقت:** ${new Date().toLocaleTimeString()} (${new Date().toLocaleDateString()})`)
-                .setColor(isGive ? 0x2ECC71 : 0xE74C3C)
-                .setTimestamp();
+            weapons_data.records.push(recordEntry);
+            saveWeaponsData();
 
-            const weaponsLogChannel = interaction.guild.channels.cache.get(WEAPONS_CHANNEL_ID) || interaction.channel;
-            await weaponsLogChannel.send({ embeds: [embed] });
+            await interaction.reply({ content: `✅ تم تسجيل العملية بنجاح وتحديث لوحة الأسلحة الرئيسية!`, ephemeral: true });
             return;
         }
 
