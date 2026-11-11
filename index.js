@@ -66,18 +66,19 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildVoiceStates
     ]
 });
 
-// المعرفات والثوابت المحددة حسب طلبك
+// المعرفات والثوابت المحددة حسب طلبك الدقيق
 const VACATION_LOG_CHANNEL_ID = "1552576612648624148";
-const LEADERBOARD_CHANNEL_ID = "1563202261281144952";
-const WARN_CHANNEL_ID = "1534996020092600433"; // روم إعطاء الورن للإدارة والأدمن
-const WARN_REQUEST_CHANNEL_ID = "1557330614141587586"; // روم طلبات الورن من الناس
+const LEADERBOARD_CHANNEL_ID = "1563202261281144952"; // روم الليدر بورد الشامل
+const WARN_PANEL_CHANNEL_ID = "1534996020092600433"; // روم لوحة التحكم والورنات الإجمالية
+const WARN_LOG_CHANNEL_ID = "1557330614141587586"; // روم إرسال رسالة الورن الفردية للشخص
 const WEAPONS_CHANNEL_ID = "1561472930670452866"; // روم بوت الأسلحة
 const ALLOWED_ROLE_ID = "1283928161805140022"; // رتبة الأدمن Structure
-const WEAPON_SPECIAL_ROLE_ID = "1561471985135910932"; // الرتبة الجديدة المخصصة للأسلحة
+const WEAPON_SPECIAL_ROLE_ID = "1561471985135910932"; // رتبة الأسلحة المخصصة
 const SPECIAL_USER_ID = "1343942987154984974"; // آي دي الشخص المخصص (el_shater)
 
 // الرولات المطلوبة للأعضاء (الربط التلقائي)
@@ -409,7 +410,7 @@ function buildWarningsEmbed() {
 }
 
 async function updateWarningsMessage() {
-    let channelId = warnings_data.warn_channel_id || WARN_CHANNEL_ID;
+    let channelId = WARN_PANEL_CHANNEL_ID; // روم لوحة الورنات الأساسية ثابت في 1534996020092600433
     let msgId = warnings_data.warn_msg_id;
     if (!channelId) return;
 
@@ -521,7 +522,6 @@ function taskControlRows() {
     );
 }
 
-// تصميم لوحة التاسكات لعرض الموارد المعتمدة بجانب اسم كل شخص
 function buildTaskPanelEmbed() {
     let membersText = MEMBERS_LIST.map(n => {
         let res = task_resources_data[n];
@@ -582,11 +582,10 @@ async function updateLiveShowMessage() {
 
 function showPanelRow() {
     return new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("btn_show_change_modal_v2").setLabel("تغيير").setStyle(ButtonStyle.Primary)
+        new ButtonBuilder().setCustomId("btn_show_change_modal_v2").setLabel("تغيير").setStyle(ButtonStyle.Success)
     );
 }
 
-// دالة فحص الصلاحيات العامة
 function checkTabletPermissions(interaction) {
     let user = interaction.member;
     if (!user) return false;
@@ -596,7 +595,6 @@ function checkTabletPermissions(interaction) {
     return has_allowed_role || is_admin || is_special_user;
 }
 
-// دالة فحص صلاحيات الأسلحة (تشمل الرتبة الجديدة 1561471985135910932)
 function checkWeaponPermissions(interaction) {
     let user = interaction.member;
     if (!user) return false;
@@ -605,6 +603,64 @@ function checkWeaponPermissions(interaction) {
     let is_admin = user.permissions.has('Administrator');
     let is_special_user = user.id === SPECIAL_USER_ID;
     return has_allowed_role || has_weapon_role || is_admin || is_special_user;
+}
+
+// دالة تنسيق الوقت (من ثواني إلى أيام، ساعات، دقائق)
+function formatVoiceTime(totalSeconds) {
+    let days = Math.floor(totalSeconds / (3600 * 24));
+    let hours = Math.floor((totalSeconds % (3600 * 24)) / 3600);
+    let minutes = Math.floor((totalSeconds % 3600) / 60);
+
+    let parts = [];
+    if (days > 0) parts.push(`${days} يوم`);
+    if (hours > 0 || days > 0) parts.push(`${hours} ساعة`);
+    parts.push(`${minutes} دقيقة`);
+    return parts.join(' ');
+}
+
+// بناء لوحة ليدر بورد الفويس
+function buildVoiceLeaderboardEmbed() {
+    let voiceTimeMap = db.voiceTime || {};
+    let sortedUsers = Object.entries(voiceTimeMap).sort((a, b) => b[1] - a[1]);
+
+    let desc = "قائمة الوقت في الفويس:\n\n";
+    if (sortedUsers.length === 0) {
+        desc += "لا توجد أي بيانات مسجلة في الفويس حتى الآن.";
+    } else {
+        for (let [userId, seconds] of sortedUsers) {
+            let formattedTime = formatVoiceTime(seconds);
+            desc += `• <@${userId}> : ${formattedTime}\n`;
+        }
+    }
+
+    return new EmbedBuilder()
+        .setTitle("🏆 LEADERBOARD - VOICE TIME")
+        .setDescription(desc)
+        .setColor(0xF1C40F)
+        .setFooter({ text: "xXx VOICE LEADERBOARD", iconURL: client.user?.displayAvatarURL() });
+}
+
+async function updateVoiceLeaderboardEmbed() {
+    const channel = client.channels.cache.get(LEADERBOARD_CHANNEL_ID);
+    if (!channel) return;
+
+    try {
+        const embed = buildVoiceLeaderboardEmbed();
+        if (db.vc_message_id) {
+            const msg = await channel.messages.fetch(db.vc_message_id);
+            await msg.edit({ embeds: [embed] });
+        } else {
+            const msg = await channel.send({ embeds: [embed] });
+            db.vc_message_id = msg.id;
+            saveLeaderboardData();
+        }
+    } catch (e) {
+        try {
+            const msg = await channel.send({ embeds: [buildVoiceLeaderboardEmbed()] });
+            db.vc_message_id = msg.id;
+            saveLeaderboardData();
+        } catch (err) {}
+    }
 }
 
 function buildTaskLeaderboardEmbed() {
@@ -634,6 +690,8 @@ function buildVacationEmbed() {
 async function updateLeaderboardEmbeds() {
     const channel = client.channels.cache.get(LEADERBOARD_CHANNEL_ID);
     if (!channel) return;
+
+    await updateVoiceLeaderboardEmbed();
 
     try {
         const embed = buildTaskLeaderboardEmbed();
@@ -668,13 +726,73 @@ async function updateLeaderboardEmbeds() {
     }
 }
 
+let activeVoiceUsers = new Map();
+
 client.once('ready', async () => {
     console.log(`✅ البوت الموحد اشتغل بنجاح: ${client.user.tag}`);
     await updateLeaderboardEmbeds();
     await updateWarningsMessage();
+
+    client.guilds.cache.forEach(guild => {
+        guild.channels.cache.forEach(channel => {
+            if (channel.isVoiceBased()) {
+                channel.members.forEach(member => {
+                    if (!member.user.bot) {
+                        activeVoiceUsers.set(member.id, Date.now());
+                    }
+                });
+            }
+        });
+    });
+
+    setInterval(async () => {
+        let now = Date.now();
+        let updated = false;
+        for (let [userId, joinTime] of activeVoiceUsers.entries()) {
+            let elapsedSeconds = Math.floor((now - joinTime) / 1000);
+            if (elapsedSeconds >= 30) {
+                db.voiceTime[userId] = (db.voiceTime[userId] || 0) + elapsedSeconds;
+                activeVoiceUsers.set(userId, now);
+                updated = true;
+            }
+        }
+        if (updated) {
+            saveLeaderboardData();
+            await updateVoiceLeaderboardEmbed();
+        }
+    }, 30000);
 });
 
-// مراقبة تعديل الرولات للأعضاء لإضافتهم أو إزالتهم تلقائياً من قائمة الأعضاء
+client.on('voiceStateUpdate', (oldState, newState) => {
+    let userId = newState.member?.id || oldState.member?.id;
+    if (!userId || newState.member?.user.bot) return;
+
+    let wasInVoice = oldState.channelId;
+    let isInVoice = newState.channelId;
+
+    if (!wasInVoice && isInVoice) {
+        activeVoiceUsers.set(userId, Date.now());
+    } else if (wasInVoice && !isInVoice) {
+        let joinTime = activeVoiceUsers.get(userId);
+        if (joinTime) {
+            let elapsedSeconds = Math.floor((Date.now() - joinTime) / 1000);
+            db.voiceTime[userId] = (db.voiceTime[userId] || 0) + elapsedSeconds;
+            saveLeaderboardData();
+            activeVoiceUsers.delete(userId);
+            updateVoiceLeaderboardEmbed();
+        }
+    } else if (wasInVoice && isInVoice && wasInVoice !== isInVoice) {
+        let joinTime = activeVoiceUsers.get(userId);
+        if (joinTime) {
+            let elapsedSeconds = Math.floor((Date.now() - joinTime) / 1000);
+            db.voiceTime[userId] = (db.voiceTime[userId] || 0) + elapsedSeconds;
+            saveLeaderboardData();
+            activeVoiceUsers.set(userId, Date.now());
+            updateVoiceLeaderboardEmbed();
+        }
+    }
+});
+
 client.on('guildMemberUpdate', async (oldMember, newMember) => {
     let hadRole = oldMember.roles.cache.has(ROLE_ID_1) || oldMember.roles.cache.has(ROLE_ID_2);
     let hasRole = newMember.roles.cache.has(ROLE_ID_1) || newMember.roles.cache.has(ROLE_ID_2);
@@ -703,7 +821,6 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
     }
 });
 
-// استقبال الأوامر بالشات
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
     const content = message.content.trim();
@@ -925,7 +1042,6 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.showModal(modal);
         }
 
-        // أزرار نظام الأسلحة (باستخدام صلاحيات الأسلحة الجديدة)
         if (cid === 'persistent_btn_receive_v9' || cid === 'persistent_btn_give_v9') {
             if (!checkWeaponPermissions(interaction)) {
                 await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن، الرتبة المحددة، والشخص المخصص فقط.", ephemeral: true });
@@ -1097,24 +1213,34 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
+        // إزالة الورن وحذف رسالته تلقائياً من الروم المخصص 1557330614141587586
         if (cid === 'warn_remove_select') {
             let selectedName = interaction.values[0];
             let warnObj = warnings_data.warnings_list[selectedName];
 
-            if (warnObj && warnObj.messageId) {
+            if (warnObj) {
                 try {
-                    let ch = await client.channels.fetch(warnings_data.warn_channel_id || WARN_CHANNEL_ID);
+                    let logChannelId = warnObj.channelId || WARN_LOG_CHANNEL_ID;
+                    let ch = await client.channels.fetch(logChannelId);
                     if (ch) {
                         let msg = await ch.messages.fetch(warnObj.messageId);
                         if (msg) await msg.delete();
                     }
-                } catch (e) {}
+                } catch (e) {
+                    try {
+                        let panelCh = await client.channels.fetch(WARN_PANEL_CHANNEL_ID);
+                        if (panelCh) {
+                            let msg = await panelCh.messages.fetch(warnObj.messageId);
+                            if (msg) await msg.delete();
+                        }
+                    } catch (err) {}
+                }
             }
 
             delete warnings_data.warnings_list[selectedName];
             saveWarningsData();
             await updateWarningsMessage();
-            await interaction.update({ content: `🗑️ تم إزالة الورن عن العضو (${selectedName}) ومسح رسالته وتحديث اللوحة!`, components: [] });
+            await interaction.update({ content: `🗑️ تم إزالة الورن عن العضو (**${selectedName}**) وحذف رسالته تلقائياً من الروم وتحديث اللوحة!`, components: [] });
             return;
         }
 
@@ -1304,25 +1430,30 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
+        // إرسال رسالة الورن الفردية حصرياً في الروم المخصص 1557330614141587586
         if (interaction.customId.startsWith('warn_modal_')) {
             let parts = interaction.customId.split('_');
             let level = parts[parts.length - 1];
             let targetName = parts.slice(2, parts.length - 1).join('_');
             let reason = interaction.fields.getTextInputValue('warn_reason');
 
-            let logChannel = interaction.guild.channels.cache.get(WARN_CHANNEL_ID) || interaction.channel;
+            let logChannel = interaction.guild.channels.cache.get(WARN_LOG_CHANNEL_ID) || interaction.channel;
             let logEmbed = new EmbedBuilder()
-                .setTitle(`ورن ${level} ⚠️`)
+                .setTitle(`⚠️ ورن ${level}`)
                 .setDescription(`👤 **العضو:** ${targetName}\n👑 **بواسطة:** ${interaction.user}\n💬 **السبب:** ${reason}\n⏰ **الوقت:** ${new Date().toLocaleTimeString()} (${new Date().toLocaleDateString()})\n⏳ **المدة:** ${level === '1' ? '10 أيام' : level === '2' ? '15 يوم' : 'دائم (طوال الوقت)'}`)
                 .setColor(0xE74C3C);
             
             let sentMsg = await logChannel.send({ embeds: [logEmbed] });
 
-            warnings_data.warnings_list[targetName] = { level: level, messageId: sentMsg.id };
+            warnings_data.warnings_list[targetName] = { 
+                level: level, 
+                messageId: sentMsg.id, 
+                channelId: logChannel.id 
+            };
             saveWarningsData();
             await updateWarningsMessage();
 
-            await interaction.reply({ content: `⚠️ تم إعطاء ورن مستوى (${level}) لـ (${targetName}) بنجاح!`, ephemeral: true });
+            await interaction.reply({ content: `⚠️ تم إعطاء ورن مستوى (${level}) لـ (${targetName}) بنجاح وإرسال الرسالة للروم المخصص!`, ephemeral: true });
 
             if (level === '1') {
                 setTimeout(async () => {
