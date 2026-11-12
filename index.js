@@ -67,11 +67,12 @@ const client = new Client({
     ]
 });
 
-// المعرفات الثابتة
+// المعرفات الثابتة والصحيحة بدقة تامة حسب طلبك الأخير
 const VACATION_LOG_CHANNEL_ID = "1552576612648624148";
 const LEADERBOARD_CHANNEL_ID = "1563202261281144952"; 
-const WARN_PANEL_CHANNEL_ID = "1534996020092600433"; 
-const WEAPONS_CHANNEL_ID = "1561472930670452866"; 
+const WARN_PANEL_CHANNEL_ID = "1557330614141587586"; // روم اللوحة الأساسية للورنات
+const WARN_LOG_CHANNEL_ID = "1534996020092600433";    // روم إرسال رسائل الورن الفردية (إعطاء الورن)
+const WEAPONS_CHANNEL_ID = "1561472930670452866";    // روم لوحة الأسلحة الرئيسية
 const ALLOWED_ROLE_ID = "1283928161805140022"; 
 const WEAPON_SPECIAL_ROLE_ID = "1561471985135910932"; 
 const SPECIAL_USER_ID = "1343942987154984974"; 
@@ -115,6 +116,7 @@ function saveMembersList() {
 
 let MEMBERS_LIST = loadMembersList();
 
+// نظام الأسلحة الموحد (Embed رئيسي واحد)
 let weapons_data = { "records": [], "tracker": { channel_id: null, message_id: null } };
 if (fs.existsSync(WEAPONS_DATA_FILE)) {
     try {
@@ -1226,13 +1228,14 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
+        // إزالة الورن ومسح رسالته من روم اللوج حصرياً (WARN_LOG_CHANNEL_ID)
         if (cid === 'warn_remove_select') {
             let selectedName = interaction.values[0];
             let warnObj = warnings_data.warnings_list[selectedName];
 
             if (warnObj) {
                 try {
-                    let ch = await client.channels.fetch(WARN_PANEL_CHANNEL_ID);
+                    let ch = await client.channels.fetch(WARN_LOG_CHANNEL_ID);
                     if (ch) {
                         let msg = await ch.messages.fetch(warnObj.messageId);
                         if (msg) await msg.delete();
@@ -1243,7 +1246,7 @@ client.on('interactionCreate', async (interaction) => {
             delete warnings_data.warnings_list[selectedName];
             saveWarningsData();
             await updateWarningsMessage();
-            await interaction.update({ content: `🗑️ تم إزالة الورن عن العضو (**${selectedName}**) وحذف رسالته تلقائياً!`, components: [] });
+            await interaction.update({ content: `🗑️ تم إزالة الورن عن العضو (**${selectedName}**) وحذف رسالته تلقائياً من روم اللوج!`, components: [] });
             return;
         }
 
@@ -1433,13 +1436,18 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
+        // إرسال رسالة الورن الفردية حصرياً في روم إعطاء الورن (WARN_LOG_CHANNEL_ID = 1534996020092600433)
         if (interaction.customId.startsWith('warn_modal_')) {
             let parts = interaction.customId.split('_');
             let level = parts[parts.length - 1];
             let targetName = parts.slice(2, parts.length - 1).join('_');
             let reason = interaction.fields.getTextInputValue('warn_reason');
 
-            let logChannel = interaction.guild.channels.cache.get(WARN_PANEL_CHANNEL_ID) || interaction.channel;
+            let logChannel = interaction.guild.channels.cache.get(WARN_LOG_CHANNEL_ID);
+            if (!logChannel) {
+                logChannel = await client.channels.fetch(WARN_LOG_CHANNEL_ID).catch(() => interaction.channel);
+            }
+
             let logEmbed = new EmbedBuilder()
                 .setTitle(`⚠️ ورن ${level}`)
                 .setDescription(`👤 **العضو:** ${targetName}\n👑 **بواسطة:** ${interaction.user}\n💬 **السبب:** ${reason}\n⏰ **الوقت:** ${new Date().toLocaleTimeString()} (${new Date().toLocaleDateString()})\n⏳ **المدة:** ${level === '1' ? '10 أيام' : level === '2' ? '15 يوم' : 'دائم (طوال الوقت)'}`)
@@ -1455,7 +1463,7 @@ client.on('interactionCreate', async (interaction) => {
             saveWarningsData();
             await updateWarningsMessage();
 
-            await interaction.reply({ content: `⚠️ تم إعطاء ورن مستوى (${level}) لـ (${targetName}) بنجاح وإرسال الرسالة للروم المخصص!`, ephemeral: true });
+            await interaction.reply({ content: `⚠️ تم إعطاء ورن مستوى (${level}) لـ (${targetName}) بنجاح وإرسال الرسالة لروم الورن المخصص!`, ephemeral: true });
 
             if (level === '1') {
                 setTimeout(async () => {
@@ -1627,7 +1635,7 @@ if (!botToken && tokensList && tokensList.length > 0) {
     botToken = tokensList[0].token;
 }
 
-if (botToken) {
+if, (botToken) {
     client.login(botToken);
 } else {
     console.log("❌ تنبيه: لم يتم العثور على التوكن الخاص بالبوت!");
