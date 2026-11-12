@@ -67,11 +67,11 @@ const client = new Client({
     ]
 });
 
-// المعرفات الثابتة حسب طلبك
+// المعرفات الثابتة
 const VACATION_LOG_CHANNEL_ID = "1552576612648624148";
 const LEADERBOARD_CHANNEL_ID = "1563202261281144952"; 
-const WARN_PANEL_CHANNEL_ID = "1534996020092600433"; // روم لوحة الورنات ورسائل الورن الفردية الأساسية
-const WEAPONS_CHANNEL_ID = "1561472930670452866"; // روم لوحة الأسلحة الرئيسية
+const WARN_PANEL_CHANNEL_ID = "1534996020092600433"; 
+const WEAPONS_CHANNEL_ID = "1561472930670452866"; 
 const ALLOWED_ROLE_ID = "1283928161805140022"; 
 const WEAPON_SPECIAL_ROLE_ID = "1561471985135910932"; 
 const SPECIAL_USER_ID = "1343942987154984974"; 
@@ -115,7 +115,6 @@ function saveMembersList() {
 
 let MEMBERS_LIST = loadMembersList();
 
-// بيانات الأسلحة الموحدة في Embed واحد
 let weapons_data = { "records": [], "tracker": { channel_id: null, message_id: null } };
 if (fs.existsSync(WEAPONS_DATA_FILE)) {
     try {
@@ -176,7 +175,6 @@ async function updateWeaponsLivePanel() {
     } catch (e) {}
 }
 
-// باقي الأنظمة (تاسكات، فلوس، تابلت، مخزون)
 let task_resources_data = {};
 if (fs.existsSync(TASK_RESOURCES_FILE)) {
     try { task_resources_data = JSON.parse(fs.readFileSync(TASK_RESOURCES_FILE, 'utf8')); } catch (e) {}
@@ -727,7 +725,7 @@ async function updateLeaderboardEmbeds() {
             const msg = await channel.messages.fetch(db.vacation_message_id);
             await msg.edit({ embeds: [embed] });
         } else {
-            const msg = await channel.send({ embeds: [embed] });
+            const msg = await channel.send({ embeds: [buildVacationEmbed()] });
             db.vacation_message_id = msg.id;
             saveLeaderboardData();
         }
@@ -909,7 +907,6 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-// التفاعلات والأزرار
 client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton()) {
         const cid = interaction.customId;
@@ -1229,7 +1226,6 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
-        // إزالة الورن ومسح رسالته من روم 1534996020092600433 تلقائياً وبدون رسايل مؤكدة ظاهرية
         if (cid === 'warn_remove_select') {
             let selectedName = interaction.values[0];
             let warnObj = warnings_data.warnings_list[selectedName];
@@ -1437,7 +1433,6 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
-        // إرسال رسالة الورن الفردية في الروم 1534996020092600433 وإخفاء أي رسائل تأكيد مؤقتة
         if (interaction.customId.startsWith('warn_modal_')) {
             let parts = interaction.customId.split('_');
             let level = parts[parts.length - 1];
@@ -1460,7 +1455,6 @@ client.on('interactionCreate', async (interaction) => {
             saveWarningsData();
             await updateWarningsMessage();
 
-            // استخدام ephemeral بحت لعدم إرسال أي رسائل عامة مزعجة
             await interaction.reply({ content: `⚠️ تم إعطاء ورن مستوى (${level}) لـ (${targetName}) بنجاح وإرسال الرسالة للروم المخصص!`, ephemeral: true });
 
             if (level === '1') {
@@ -1508,7 +1502,6 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // تسجيل السلاح وتحديث الـ Embed الرئيسي فورا في روم الأسلحة بدون رسائل مزعجة
         if (interaction.customId === 'weapon_give_modal' || interaction.customId === 'weapon_receive_modal') {
             const isGive = interaction.customId === 'weapon_give_modal';
             const target = interaction.fields.getTextInputValue('weapon_target');
@@ -1634,7 +1627,6 @@ if (!botToken && tokensList && tokensList.length > 0) {
     botToken = tokensList[0].token;
 }
 
-if.botToken = botToken;
 if (botToken) {
     client.login(botToken);
 } else {
