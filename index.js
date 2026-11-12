@@ -67,7 +67,7 @@ const client = new Client({
     ]
 });
 
-// المعرفات الثابتة والصحيحة بدقة تامة حسب طلبك الأخير
+// المعرفات الثابتة والصحيحة بدقة تامة
 const VACATION_LOG_CHANNEL_ID = "1552576612648624148";
 const LEADERBOARD_CHANNEL_ID = "1563202261281144952"; 
 const WARN_PANEL_CHANNEL_ID = "1557330614141587586"; // روم اللوحة الأساسية للورنات
@@ -116,7 +116,7 @@ function saveMembersList() {
 
 let MEMBERS_LIST = loadMembersList();
 
-// نظام الأسلحة الموحد (Embed رئيسي واحد)
+// نظام الأسلحة الموحد
 let weapons_data = { "records": [], "tracker": { channel_id: null, message_id: null } };
 if (fs.existsSync(WEAPONS_DATA_FILE)) {
     try {
@@ -1228,7 +1228,6 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
-        // إزالة الورن ومسح رسالته من روم اللوج حصرياً (WARN_LOG_CHANNEL_ID)
         if (cid === 'warn_remove_select') {
             let selectedName = interaction.values[0];
             let warnObj = warnings_data.warnings_list[selectedName];
@@ -1436,7 +1435,6 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
-        // إرسال رسالة الورن الفردية حصرياً في روم إعطاء الورن (WARN_LOG_CHANNEL_ID = 1534996020092600433)
         if (interaction.customId.startsWith('warn_modal_')) {
             let parts = interaction.customId.split('_');
             let level = parts[parts.length - 1];
@@ -1635,7 +1633,7 @@ if (!botToken && tokensList && tokensList.length > 0) {
     botToken = tokensList[0].token;
 }
 
-if, (botToken) {
+if (botToken) {
     client.login(botToken);
 } else {
     console.log("❌ تنبيه: لم يتم العثور على التوكن الخاص بالبوت!");
