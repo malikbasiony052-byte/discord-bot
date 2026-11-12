@@ -43,7 +43,6 @@ setInterval(async () => {
     }
 }, 15000);
 
-// تشغيل فويس كلينت (Voice Clients)
 const cleanTokens = tokens.reduce((acc, token) => {
     const isValid = token?.token?.length > 30;
     const isDuplicate = acc.some(t => t.token === token.token);
@@ -58,9 +57,6 @@ for (const tokenConfig of cleanTokens) {
     vClient.connect();
 }
 
-// ==========================================
-// 🤖 العميل الرئيسي الموحد لجميع أنظمة ديسكورد
-// ==========================================
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -71,17 +67,15 @@ const client = new Client({
     ]
 });
 
-// المعرفات والثوابت المحددة حسب طلبك
+// المعرفات الثابتة حسب طلبك
 const VACATION_LOG_CHANNEL_ID = "1552576612648624148";
 const LEADERBOARD_CHANNEL_ID = "1563202261281144952"; 
-const WARN_PANEL_CHANNEL_ID = "1534996020092600433"; 
-const WARN_LOG_CHANNEL_ID = "1557330614141587586"; 
+const WARN_PANEL_CHANNEL_ID = "1534996020092600433"; // روم لوحة الورنات ورسائل الورن الفردية الأساسية
 const WEAPONS_CHANNEL_ID = "1561472930670452866"; // روم لوحة الأسلحة الرئيسية
-const ALLOWED_ROLE_ID = "1283928161805140022"; // رتبة الأدمن Structure
-const WEAPON_SPECIAL_ROLE_ID = "1561471985135910932"; // رتبة الأسلحة المخصصة
-const SPECIAL_USER_ID = "1343942987154984974"; // آي دي الشخص المخصص (el_shater)
+const ALLOWED_ROLE_ID = "1283928161805140022"; 
+const WEAPON_SPECIAL_ROLE_ID = "1561471985135910932"; 
+const SPECIAL_USER_ID = "1343942987154984974"; 
 
-// الرولات المطلوبة للأعضاء (الربط التلقائي)
 const ROLE_ID_1 = "1552642469789831168";
 const ROLE_ID_2 = "1568516316233465966";
 
@@ -100,9 +94,8 @@ const STORAGE_FILE = "storage_data.json";
 const STORAGE_INVOICES_FILE = "storage_invoices.json";
 const STORAGE_MSG_TRACKER = "storage_msg_tracker.json";
 const TASK_RESOURCES_FILE = "task_resources_data.json";
-const WEAPONS_DATA_FILE = "weapons_system_data.json"; // ملف تخزين سجلات الأسلحة
+const WEAPONS_DATA_FILE = "weapons_system_data.json";
 
-// قائمة الأعضاء الافتراضية
 const DEFAULT_MEMBERS = [
     "النمر", "شناوي", "كيموز", "جنزوري", "بسيوني", 
     "منفاخ", "فرفشة", "شبح", "زياد شاهين", "السيد شحاتة", 
@@ -112,26 +105,21 @@ const DEFAULT_MEMBERS = [
 
 function loadMembersList() {
     if (fs.existsSync(MEMBERS_FILE)) {
-        try {
-            return JSON.parse(fs.readFileSync(MEMBERS_FILE, 'utf8'));
-        } catch (e) {}
+        try { return JSON.parse(fs.readFileSync(MEMBERS_FILE, 'utf8')); } catch (e) {}
     }
     return [...DEFAULT_MEMBERS];
 }
-
 function saveMembersList() {
-    try {
-        fs.writeFileSync(MEMBERS_FILE, JSON.stringify(MEMBERS_LIST, null, 4), 'utf8');
-    } catch (e) {}
+    try { fs.writeFileSync(MEMBERS_FILE, JSON.stringify(MEMBERS_LIST, null, 4), 'utf8'); } catch (e) {}
 }
 
 let MEMBERS_LIST = loadMembersList();
 
-// نظام بيانات الأسلحة (سجل العمليات والـ Tracker)
+// بيانات الأسلحة الموحدة في Embed واحد
 let weapons_data = { "records": [], "tracker": { channel_id: null, message_id: null } };
 if (fs.existsSync(WEAPONS_DATA_FILE)) {
     try {
-        const loadedWep = JSON.parse(fs.readFileSync(WEAPONS_DATA_FILE, 'utf8'));
+        let loadedWep = JSON.parse(fs.readFileSync(WEAPONS_DATA_FILE, 'utf8'));
         if (typeof loadedWep === 'object') Object.assign(weapons_data, loadedWep);
     } catch (e) {}
 }
@@ -140,20 +128,17 @@ function saveWeaponsData() {
     updateWeaponsLivePanel();
 }
 
-// بناء لوحة الأسلحة الكبيرة (Embed)
 function buildWeaponsEmbed() {
     let records = weapons_data.records || [];
-    let desc = "### 🔫 سجل العمليات الحالية للأسلحة (تسليم واستلام):\n\n";
+    let desc = "### 🔫 الأشخاص المسالمين سلاح:\n\n";
 
     if (records.length === 0) {
-        desc += "لا توجد أي عمليات أسلحة مسجلة حتى الآن.";
+        desc += "لا توجد أي عمليات تسليم أو استلام أسلحة مسجلة حتى الآن.";
     } else {
-        // عرض آخر العمليات مرتبة
         for (let i = records.length - 1; i >= 0; i--) {
             let r = records[i];
-            let emoji = r.type === 'give' ? '📤' : '📥';
-            let typeText = r.type === 'give' ? 'تسليم سلاح' : 'استلام سلاح';
-            desc += `${emoji} **${typeText}**\n`;
+            let typeLabel = r.type === 'give' ? '📤 تسليم سلاح' : '📥 استلام سلاح';
+            desc += `• **الحالة:** ${typeLabel}\n`;
             desc += `• **بواسطة:** <@${r.authorId}>\n`;
             desc += `• **الشخص:** ${r.target}\n`;
             desc += `• **التفاصيل:** \`${r.details}\`\n`;
@@ -163,7 +148,7 @@ function buildWeaponsEmbed() {
     }
 
     return new EmbedBuilder()
-        .setTitle("🛡️ نظام الأسلحة الموحد - WEAPONS SYSTEM")
+        .setTitle("🛡️ لوحة الأسلحة الرسمية - WEAPONS SYSTEM")
         .setDescription(desc)
         .setColor(0x2ECC71)
         .setFooter({ text: "xXx WEAPONS SYSTEM", iconURL: client.user?.displayAvatarURL() });
@@ -191,23 +176,20 @@ async function updateWeaponsLivePanel() {
     } catch (e) {}
 }
 
-// نظام موارد التاسكات المعتمدة لكل شخص
+// باقي الأنظمة (تاسكات، فلوس، تابلت، مخزون)
 let task_resources_data = {};
 if (fs.existsSync(TASK_RESOURCES_FILE)) {
-    try {
-        task_resources_data = JSON.parse(fs.readFileSync(TASK_RESOURCES_FILE, 'utf8'));
-    } catch (e) {}
+    try { task_resources_data = JSON.parse(fs.readFileSync(TASK_RESOURCES_FILE, 'utf8')); } catch (e) {}
 }
 function saveTaskResourcesData() {
     fs.writeFileSync(TASK_RESOURCES_FILE, JSON.stringify(task_resources_data, null, 2), 'utf8');
     updateTaskPanelMessage();
 }
 
-// نظام بيانات الفلوس
 let money_data = { target_amount: 100000, payments: {} };
 if (fs.existsSync(MONEY_DATA_FILE)) {
     try {
-        const loadedMoney = JSON.parse(fs.readFileSync(MONEY_DATA_FILE, 'utf8'));
+        let loadedMoney = JSON.parse(fs.readFileSync(MONEY_DATA_FILE, 'utf8'));
         if (typeof loadedMoney === 'object') Object.assign(money_data, loadedMoney);
     } catch (e) {}
 }
@@ -236,9 +218,7 @@ const DEFAULT_STOCK = {
 function loadTabletsData() {
     let saved = {};
     if (fs.existsSync(DATA_FILE)) {
-        try {
-            saved = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-        } catch (e) {}
+        try { saved = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch (e) {}
     }
     let res = {};
     for (let name of MEMBERS_LIST) {
@@ -246,17 +226,14 @@ function loadTabletsData() {
     }
     return res;
 }
-
 function saveTabletsData() {
-    try {
-        fs.writeFileSync(DATA_FILE, JSON.stringify(tablets_data, null, 4), 'utf8');
-    } catch (e) {}
+    try { fs.writeFileSync(DATA_FILE, JSON.stringify(tablets_data, null, 4), 'utf8'); } catch (e) {}
 }
 
 function loadStock() {
     if (fs.existsSync(STOCK_FILE)) {
         try {
-            const saved = JSON.parse(fs.readFileSync(STOCK_FILE, 'utf8'));
+            let saved = JSON.parse(fs.readFileSync(STOCK_FILE, 'utf8'));
             for (let k in DEFAULT_STOCK) {
                 if (!(k in saved)) saved[k] = DEFAULT_STOCK[k];
             }
@@ -265,56 +242,38 @@ function loadStock() {
     }
     return { ...DEFAULT_STOCK };
 }
-
 function saveStock() {
-    try {
-        fs.writeFileSync(STOCK_FILE, JSON.stringify(stock_data, null, 4), 'utf8');
-    } catch (e) {}
+    try { fs.writeFileSync(STOCK_FILE, JSON.stringify(stock_data, null, 4), 'utf8'); } catch (e) {}
 }
 
 function loadShowTracker() {
     if (fs.existsSync(MSG_TRACKER_FILE)) {
-        try {
-            return JSON.parse(fs.readFileSync(MSG_TRACKER_FILE, 'utf8'));
-        } catch (e) {}
+        try { return JSON.parse(fs.readFileSync(MSG_TRACKER_FILE, 'utf8')); } catch (e) {}
     }
     return {};
 }
-
 function saveShowTracker(channel_id, message_id) {
-    try {
-        fs.writeFileSync(MSG_TRACKER_FILE, JSON.stringify({ channel_id, message_id }), 'utf8');
-    } catch (e) {}
+    try { fs.writeFileSync(MSG_TRACKER_FILE, JSON.stringify({ channel_id, message_id }), 'utf8'); } catch (e) {}
 }
 
 function loadTabletPanelTracker() {
     if (fs.existsSync(TABLET_PANEL_TRACKER)) {
-        try {
-            return JSON.parse(fs.readFileSync(TABLET_PANEL_TRACKER, 'utf8'));
-        } catch (e) {}
+        try { return JSON.parse(fs.readFileSync(TABLET_PANEL_TRACKER, 'utf8')); } catch (e) {}
     }
     return {};
 }
-
 function saveTabletPanelTracker(channel_id, message_id) {
-    try {
-        fs.writeFileSync(TABLET_PANEL_TRACKER, JSON.stringify({ channel_id, message_id }), 'utf8');
-    } catch (e) {}
+    try { fs.writeFileSync(TABLET_PANEL_TRACKER, JSON.stringify({ channel_id, message_id }), 'utf8'); } catch (e) {}
 }
 
 function loadTaskPanelTracker() {
     if (fs.existsSync(TASK_PANEL_TRACKER)) {
-        try {
-            return JSON.parse(fs.readFileSync(TASK_PANEL_TRACKER, 'utf8'));
-        } catch (e) {}
+        try { return JSON.parse(fs.readFileSync(TASK_PANEL_TRACKER, 'utf8')); } catch (e) {}
     }
     return {};
 }
-
 function saveTaskPanelTracker(channel_id, message_id) {
-    try {
-        fs.writeFileSync(TASK_PANEL_TRACKER, JSON.stringify({ channel_id, message_id }), 'utf8');
-    } catch (e) {}
+    try { fs.writeFileSync(TASK_PANEL_TRACKER, JSON.stringify({ channel_id, message_id }), 'utf8'); } catch (e) {}
 }
 
 let tablets_data = loadTabletsData();
@@ -331,11 +290,10 @@ let db = {
 
 if (fs.existsSync(LEADERBOARD_DATA_FILE)) {
     try {
-        const loadedData = JSON.parse(fs.readFileSync(LEADERBOARD_DATA_FILE, 'utf8'));
+        let loadedData = JSON.parse(fs.readFileSync(LEADERBOARD_DATA_FILE, 'utf8'));
         if (typeof loadedData === 'object') Object.assign(db, loadedData);
     } catch (e) {}
 }
-
 function saveLeaderboardData() {
     fs.writeFileSync(LEADERBOARD_DATA_FILE, JSON.stringify(db, null, 2), 'utf8');
 }
@@ -343,11 +301,10 @@ function saveLeaderboardData() {
 let warnings_data = { "warnings_list": {}, "warn_msg_id": null, "warn_channel_id": null };
 if (fs.existsSync(WARNINGS_FILE)) {
     try {
-        const loaded = JSON.parse(fs.readFileSync(WARNINGS_FILE, 'utf8'));
+        let loaded = JSON.parse(fs.readFileSync(WARNINGS_FILE, 'utf8'));
         if (typeof loaded === 'object') Object.assign(warnings_data, loaded);
     } catch (e) {}
 }
-
 function saveWarningsData() {
     fs.writeFileSync(WARNINGS_FILE, JSON.stringify(warnings_data, null, 2), 'utf8');
 }
@@ -416,7 +373,6 @@ async function updateStorageLivePanel() {
 function buildMoneyEmbed() {
     let target = money_data.target_amount || 100000;
     let desc = `💰 **المبلغ المطلوب الأساسي :** \`${target}\`\n\n**الاشخاص الي سلموا فلوس :**\n\n`;
-
     let payments = money_data.payments || {};
     if (Object.keys(payments).length === 0) {
         desc += "لا توجد أي مبالغ مسجلة حتى الآن.";
@@ -426,7 +382,6 @@ function buildMoneyEmbed() {
             desc += `• **${name}** : سلم ${paid} من (${target}) فاضل (${remaining})\n`;
         }
     }
-
     return new EmbedBuilder()
         .setTitle("💵 نظام الميزانية والفلوس - MONEY SYSTEM")
         .setDescription(desc)
@@ -458,7 +413,6 @@ function buildWarningsEmbed() {
     let list = warnings_data.warnings_list || {};
     let totalWarned = Object.keys(list).length;
     let desc = `📊 **إحصائيات الورنات:**\n\n**TOTAL WARNED MEMBERS : ${totalWarned}**\n\n👤 **الأعضاء الحاصلين على ورن:**\n\n`;
-
     if (totalWarned === 0) {
         desc += "لا يوجد أعضاء عليهم تحذيرات حالياً.";
     } else {
@@ -466,7 +420,6 @@ function buildWarningsEmbed() {
             desc += `👤 **${userName}** : ⚠️ **ورن ${data.level}**\n`;
         }
     }
-
     return new EmbedBuilder()
         .setTitle("⚠️ نظام الورنات - WARN SYSTEM")
         .setDescription(desc)
@@ -537,11 +490,9 @@ function buildShowEmbed() {
             active_holders.push(`👤 **${name}** : ${status}`);
         }
     }
-    
     if (active_holders.length === 0) {
         active_holders.push("لا توجد أي أجهزة تابلت مع أي عضو حالياً.");
     }
-    
     embed.setDescription(embed.data.description + active_holders.join('\n'));
     embed.setFooter({ text: "xXx TABLETS SYSTEM", iconURL: client.user?.displayAvatarURL() });
     return embed;
@@ -590,9 +541,7 @@ function taskControlRows() {
 function buildTaskPanelEmbed() {
     let membersText = MEMBERS_LIST.map(n => {
         let res = task_resources_data[n];
-        if (res) {
-            return `• **${n}** : \`${res}\``;
-        }
+        if (res) return `• **${n}** : \`${res}\``;
         return `• **${n}**`;
     }).join('\n');
 
@@ -670,7 +619,6 @@ function checkWeaponPermissions(interaction) {
     return has_allowed_role || has_weapon_role || is_admin || is_special_user;
 }
 
-// دالة تنسيق الوقت
 function formatVoiceTime(totalSeconds) {
     let days = Math.floor(totalSeconds / (3600 * 24));
     let hours = Math.floor((totalSeconds % (3600 * 24)) / 3600);
@@ -961,7 +909,7 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-// التفاعلات
+// التفاعلات والأزرار
 client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton()) {
         const cid = interaction.customId;
@@ -1110,7 +1058,6 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.showModal(modal);
         }
 
-        // أزرار لوحة الأسلحة (تسجيل العملية وتحديث اللوحة مباشر)
         if (cid === 'persistent_btn_receive_v9' || cid === 'persistent_btn_give_v9') {
             if (!checkWeaponPermissions(interaction)) {
                 await interaction.reply({ content: "❌ هذا الإجراء مخصص للأدمن، الرتبة المحددة، والشخص المخصص فقط.", ephemeral: true });
@@ -1282,33 +1229,25 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
+        // إزالة الورن ومسح رسالته من روم 1534996020092600433 تلقائياً وبدون رسايل مؤكدة ظاهرية
         if (cid === 'warn_remove_select') {
             let selectedName = interaction.values[0];
             let warnObj = warnings_data.warnings_list[selectedName];
 
             if (warnObj) {
                 try {
-                    let logChannelId = warnObj.channelId || WARN_LOG_CHANNEL_ID;
-                    let ch = await client.channels.fetch(logChannelId);
+                    let ch = await client.channels.fetch(WARN_PANEL_CHANNEL_ID);
                     if (ch) {
                         let msg = await ch.messages.fetch(warnObj.messageId);
                         if (msg) await msg.delete();
                     }
-                } catch (e) {
-                    try {
-                        let panelCh = await client.channels.fetch(WARN_PANEL_CHANNEL_ID);
-                        if (panelCh) {
-                            let msg = await panelCh.messages.fetch(warnObj.messageId);
-                            if (msg) await msg.delete();
-                        }
-                    } catch (err) {}
-                }
+                } catch (e) {}
             }
 
             delete warnings_data.warnings_list[selectedName];
             saveWarningsData();
             await updateWarningsMessage();
-            await interaction.update({ content: `🗑️ تم إزالة الورن عن العضو (**${selectedName}**) وحذف رسالته تلقائياً من الروم وتحديث اللوحة!`, components: [] });
+            await interaction.update({ content: `🗑️ تم إزالة الورن عن العضو (**${selectedName}**) وحذف رسالته تلقائياً!`, components: [] });
             return;
         }
 
@@ -1445,7 +1384,7 @@ client.on('interactionCreate', async (interaction) => {
 
                 delete storage_invoices[targetName];
                 saveStorageInvoices();
-                await interaction.update({ content: `🗑️ تم إزالة فاتورة (${targetName}) ومسح رسالته، وإعادة الكمية (\`${qty}\` من ${item}) للمخزون بنجاح!`, components: [] });
+                await interaction.update({ content: `🗑️ تم إزالة فاتورة (${targetName}) ومسح رسالته، وإعادة الكمية للمخزون بنجاح!`, components: [] });
             } else {
                 await interaction.update({ content: `❌ لم يتم العثور على فاتورة نشطة لهذا الاسم.`, components: [] });
             }
@@ -1498,13 +1437,14 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
+        // إرسال رسالة الورن الفردية في الروم 1534996020092600433 وإخفاء أي رسائل تأكيد مؤقتة
         if (interaction.customId.startsWith('warn_modal_')) {
             let parts = interaction.customId.split('_');
             let level = parts[parts.length - 1];
             let targetName = parts.slice(2, parts.length - 1).join('_');
             let reason = interaction.fields.getTextInputValue('warn_reason');
 
-            let logChannel = interaction.guild.channels.cache.get(WARN_LOG_CHANNEL_ID) || interaction.channel;
+            let logChannel = interaction.guild.channels.cache.get(WARN_PANEL_CHANNEL_ID) || interaction.channel;
             let logEmbed = new EmbedBuilder()
                 .setTitle(`⚠️ ورن ${level}`)
                 .setDescription(`👤 **العضو:** ${targetName}\n👑 **بواسطة:** ${interaction.user}\n💬 **السبب:** ${reason}\n⏰ **الوقت:** ${new Date().toLocaleTimeString()} (${new Date().toLocaleDateString()})\n⏳ **المدة:** ${level === '1' ? '10 أيام' : level === '2' ? '15 يوم' : 'دائم (طوال الوقت)'}`)
@@ -1520,6 +1460,7 @@ client.on('interactionCreate', async (interaction) => {
             saveWarningsData();
             await updateWarningsMessage();
 
+            // استخدام ephemeral بحت لعدم إرسال أي رسائل عامة مزعجة
             await interaction.reply({ content: `⚠️ تم إعطاء ورن مستوى (${level}) لـ (${targetName}) بنجاح وإرسال الرسالة للروم المخصص!`, ephemeral: true });
 
             if (level === '1') {
@@ -1567,7 +1508,7 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // تسجيل تسليم أو استلام السلاح وإضافته للوحة الرئيسية وتحديثها فورا
+        // تسجيل السلاح وتحديث الـ Embed الرئيسي فورا في روم الأسلحة بدون رسائل مزعجة
         if (interaction.customId === 'weapon_give_modal' || interaction.customId === 'weapon_receive_modal') {
             const isGive = interaction.customId === 'weapon_give_modal';
             const target = interaction.fields.getTextInputValue('weapon_target');
@@ -1653,7 +1594,7 @@ client.on('interactionCreate', async (interaction) => {
             storage_items[itemName] = (storage_items[itemName] || 0) - itemQty;
             saveStorageItems();
 
-            await interaction.reply({ content: `🖨️ تم طباعة الفاتورة لـ (**${selectedName}**) وخصم كمية (\`${itemQty}\` من ${itemName}) تلقائياً من المخزون!`, ephemeral: true });
+            await interaction.reply({ content: `🖨️ تم طباعة الفاتورة لـ (**${selectedName}**) وخصم كمية تلقائياً من المخزون!`, ephemeral: true });
 
             let embed = new EmbedBuilder()
                 .setTitle("🧾 فاتورة استلام مخزون عائلة _ STORAGE INVOICE")
@@ -1687,13 +1628,13 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// تشغيل البوت
 import tokensList from "./tokens.js";
 let botToken = process.env.DISCORD_TOKEN;
 if (!botToken && tokensList && tokensList.length > 0) {
     botToken = tokensList[0].token;
 }
 
+if.botToken = botToken;
 if (botToken) {
     client.login(botToken);
 } else {
