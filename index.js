@@ -954,7 +954,7 @@ client.on('messageCreate', async (message) => {
 // التعامل مع جميع التفاعلات
 client.on('interactionCreate', async (interaction) => {
     
-    // 1. القائمة الرئيسية للتيكت
+    // 1. القائمة الرئيسية للتيكت (مع deferReply لمنع خطأ Interaction Failed)
     if (interaction.isStringSelectMenu() && interaction.customId === 'main_ticket_select') {
         await interaction.deferReply({ ephemeral: true });
 
@@ -981,7 +981,7 @@ client.on('interactionCreate', async (interaction) => {
                     },
                     {
                         id: member.id, // صاحب التيكت
-                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageChannels], // أعطيناه صلاحية إدارة القناة ليتمكن من القفل أيضاً
+                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageChannels],
                     },
                     {
                         id: ALLOWED_ROLE_ID,
@@ -1070,8 +1070,10 @@ client.on('interactionCreate', async (interaction) => {
 
             await interaction.editReply({ content: `✅ تم فتح تذكرتك بنجاح: <#${ticketChannel.id}>` });
         } catch (err) {
+            console.error("Ticket Creation Error:", err);
             await interaction.editReply({ content: `❌ حدث خطأ أثناء إنشاء التيكت، تأكد من صلاحيات البوت ورقم الكاتيجوري.` });
         }
+        return;
     }
 
     // 2. أزرار التيكت
@@ -1097,7 +1099,6 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
-        // تم التعديل هنا: السماح لفريق الدعم أو لصاحب التيكت نفسه بالضغط على زر خيارات
         if (cid === 'ticket_options_btn') {
             const isChannelOwner = interaction.channel.name.includes(member.user.username.toLowerCase().replace(/[^a-z0-9]/g, '-')) || interaction.channel.permissionsFor(member)?.has(PermissionFlagsBits.ManageChannels);
 
