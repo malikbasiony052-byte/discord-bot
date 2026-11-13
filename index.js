@@ -954,7 +954,7 @@ client.on('messageCreate', async (message) => {
 // التعامل مع جميع التفاعلات
 client.on('interactionCreate', async (interaction) => {
     
-    // 1. القائمة الرئيسية للتيكت (مع deferReply لمنع خطأ Interaction Failed)
+    // 1. القائمة الرئيسية للتيكت
     if (interaction.isStringSelectMenu() && interaction.customId === 'main_ticket_select') {
         await interaction.deferReply({ ephemeral: true });
 
@@ -1921,5 +1921,5 @@ if (!botToken && tokensList && tokensList.length > 0) {
 if (botToken) {
     client.login(botToken);
 } else {
-    console.log("❌ تنبيه: لم يتم العثور على التوكن الخاص بالبوت!");
+    console.log("❌ تنبيه: لم يتم العثور على التوكن الخاص البوت!");
 }
