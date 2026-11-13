@@ -578,7 +578,7 @@ async function updateTaskPanelMessage() {
         if (channel) {
             let msg = await channel.messages.fetch(tracker.message_id);
             if (msg) {
-                await msg.edit({ embeds: [buildTaskPanelEmbed()], components: [taskControlRows()] });
+                await msg.edit({ embeds: [buildTaskPanelEmbed()], components: taskControlRows() });
             }
         }
     } catch (e) {}
@@ -842,7 +842,6 @@ client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
     const content = message.content.trim();
 
-    // أوامر النظام المختلفة
     if (content.startsWith('!t')) {
         let args = content.split(' ');
         if (args.length > 1) {
@@ -914,7 +913,7 @@ client.on('messageCreate', async (message) => {
         try { await message.delete(); } catch (e) {}
     }
 
-    // أمر إرسال لوحة التيكت الرئيسية (بالثلاثة خيارات)
+    // أمر إرسال لوحة التيكت الرئيسية
     if (content === '!setup-ticket') {
         const embed = new EmbedBuilder()
             .setTitle("فتح تذكرة 🎫")
@@ -952,7 +951,7 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-// التعامل مع جميع التفاعلات (Buttons, Select Menus, Modals)
+// التعامل مع جميع التفاعلات
 client.on('interactionCreate', async (interaction) => {
     
     // 1. القائمة الرئيسية للتيكت
@@ -968,7 +967,7 @@ client.on('interactionCreate', async (interaction) => {
         else if (selectedValue === 'ticket_gang_apply') prefix = "gang-apply";
 
         const channelName = `${prefix}-${member.user.username}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
-        const categoryId = "1561035296475447316"; // ايدي الكاتيجوري المطلوب
+        const categoryId = "1561035296475447316";
 
         try {
             const ticketChannel = await guild.channels.create({
@@ -982,14 +981,14 @@ client.on('interactionCreate', async (interaction) => {
                     },
                     {
                         id: member.id, // صاحب التيكت
+                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageChannels], // أعطيناه صلاحية إدارة القناة ليتمكن من القفل أيضاً
+                    },
+                    {
+                        id: ALLOWED_ROLE_ID,
                         allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
                     },
                     {
-                        id: ALLOWED_ROLE_ID, // الرتبة الأولى للإدارة والدعم
-                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
-                    },
-                    {
-                        id: REPORT_EXTRA_ROLE_ID, // الرتبة الثانية المضافة للشكاوي والعصابات
+                        id: REPORT_EXTRA_ROLE_ID,
                         allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
                     }
                 ],
@@ -1075,7 +1074,7 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // 2. أزرار التيكت (استلام وخيارات)
+    // 2. أزرار التيكت
     if (interaction.isButton()) {
         const cid = interaction.customId;
         const member = interaction.member;
@@ -1098,9 +1097,12 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
+        // تم التعديل هنا: السماح لفريق الدعم أو لصاحب التيكت نفسه بالضغط على زر خيارات
         if (cid === 'ticket_options_btn') {
-            if (!hasSupportRole && !interaction.channel.permissionsFor(member)?.has(PermissionFlagsBits.ManageChannels)) {
-                await interaction.reply({ content: `❌ هذا الزر مخصص للإدارة وصاحب التيكت فقط.`, ephemeral: true });
+            const isChannelOwner = interaction.channel.name.includes(member.user.username.toLowerCase().replace(/[^a-z0-9]/g, '-')) || interaction.channel.permissionsFor(member)?.has(PermissionFlagsBits.ManageChannels);
+
+            if (!hasSupportRole && !isChannelOwner) {
+                await interaction.reply({ content: `❌ هذا الزر مخصص لصاحب التيكت والإدارة فقط.`, ephemeral: true });
                 return;
             }
 
@@ -1165,7 +1167,7 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // باقي تفاعلات الأسلحة، التابلت، الميزانية، الورنات، التاسكات، الإجازات، المخزون
+    // تفاعلات النظام الأخرى (التابلت، الميزانية، الورنات، إلخ...)
     const cid = interaction.customId;
 
     if (cid === 'btn_clear_weapons_records') {
@@ -1879,7 +1881,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// نظام الحماية التلقائي للتيكت: مراقبة تكرار المنشن وقفل التيكت فوراً
+// نظام الحماية التلقائي للتيكت
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
 
